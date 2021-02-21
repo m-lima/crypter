@@ -1,0 +1,17 @@
+[package]
+name = "crypter"
+version = "0.1.0"
+authors = ["Marcelo Lima <marcelowind@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+aes-gcm = "0.6"
+bincode = "1"
+miniz_oxide = { version = "0.4", optional = true }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.9"
+thiserror = "1"
+
+[features]
+default = []
+compress = [ "miniz_oxide" ]
