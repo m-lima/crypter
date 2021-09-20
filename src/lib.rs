@@ -1,14 +1,20 @@
+#![deny(warnings, clippy::pedantic, clippy::all, rust_2018_idioms)]
 type Nonce = [u8; 12];
-
-// TODO: Test no_std
-// TODO: Wrap panics (check warp c API)
 
 fn nonce() -> Nonce {
     use rand::Rng;
     rand::thread_rng().gen()
 }
 
-/// Encrypts the pyaload with AES256 GCM. The iv is randomly generated for each call
+/// Encrypts the payload with AES256 GCM. The iv is randomly generated for each call
+///
+/// # Example
+/// ```
+/// let pass = "mysecret";
+/// let payload = "supersecretpayload";
+///
+/// let encrypted = encrypt(pass.as_bytes(), payload.as_bytes());
+/// ```
 #[must_use]
 pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     use aes_gcm::aead::generic_array::GenericArray;
@@ -31,7 +37,16 @@ pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     })
 }
 
-/// Decrypts the pyaload with AES256 GCM
+/// Decrypts the payload with AES256 GCM
+///
+/// # Example
+/// ```
+/// # fn get_encrypted_payload() -> &[u8] { &[] }
+/// let pass = "mysecret";
+/// let payload = get_encrypted_payload();
+///
+/// let encrypted = encrypt(pass.as_bytes(), payload);
+/// ```
 #[must_use]
 pub fn decrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     use aes_gcm::aead::generic_array::GenericArray;
@@ -54,30 +69,31 @@ pub fn decrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     cipher.decrypt(&nonce, &payload[..payload.len() - 12]).ok()
 }
 
-pub mod c {
+pub mod ffi {
 
     macro_rules! try_slice {
         ($slice:expr) => {
             if let Some(slice) = $slice {
                 slice
             } else {
-                return RustSlice::null();
+                return CrypterRustSlice::null();
             }
         };
     }
 
     pub struct NullPointer;
 
+    /// Represents a slice of bytes owned by the caller
     #[repr(C)]
     #[derive(Copy, Clone, Debug)]
-    pub struct CSlice<'a> {
+    pub struct CrypterCSlice<'a> {
         ptr: *const u8,
         len: usize,
         _lifetime: std::marker::PhantomData<&'a ()>,
     }
 
-    impl<'a> From<CSlice<'a>> for Option<&'a [u8]> {
-        fn from(slice: CSlice<'a>) -> Self {
+    impl<'a> From<CrypterCSlice<'a>> for Option<&'a [u8]> {
+        fn from(slice: CrypterCSlice<'a>) -> Self {
             if slice.ptr.is_null() {
                 None
             } else {
@@ -86,15 +102,20 @@ pub mod c {
         }
     }
 
+    /// Represents a slice of bytes owned by Rust
+    ///
+    /// # Safety
+    ///
+    /// To free the memory [`crypter_free_slice`](fn.crypter_free_slice.html) must be called
     #[repr(C)]
     #[derive(Copy, Clone, Debug)]
-    pub struct RustSlice {
+    pub struct CrypterRustSlice {
         ptr: *mut u8,
         len: usize,
         capacity: usize,
     }
 
-    impl RustSlice {
+    impl CrypterRustSlice {
         #[must_use]
         pub fn null() -> Self {
             Self {
@@ -105,15 +126,21 @@ pub mod c {
         }
     }
 
+    /// Frees the slice of bytes owned by Rust
+    ///
+    /// # Safety
+    ///
+    /// It may be unsafe to call `free()` on this slice as there is no guarantee of which allocator
+    /// was used
     #[no_mangle]
-    pub extern "C" fn rust_slice_free(slice: RustSlice) {
+    pub extern "C" fn crypter_free_slice(slice: CrypterRustSlice) {
         if !slice.ptr.is_null() {
             std::mem::drop(unsafe { Vec::from_raw_parts(slice.ptr, slice.len, slice.capacity) });
         }
     }
 
     // TODO: Use Vec::into_raw_parts() when available
-    impl From<Vec<u8>> for RustSlice {
+    impl From<Vec<u8>> for CrypterRustSlice {
         fn from(mut vec: Vec<u8>) -> Self {
             let rust_slice = Self {
                 ptr: vec.as_mut_ptr(),
@@ -125,18 +152,38 @@ pub mod c {
         }
     }
 
+    /// Encrypts the payload with AES256 GCM. The iv is randomly generated for each call
+    ///
+    /// A wrapper around [`encrypt`](../fn.encrypt.html)
+    ///
+    /// # Safety
+    ///
+    /// This method does not take ownership of the parameters
     #[no_mangle]
-    pub extern "C" fn encrypt<'a>(pass: CSlice<'a>, payload: CSlice<'a>) -> RustSlice {
+    pub extern "C" fn crypter_encrypt<'a>(
+        pass: CrypterCSlice<'a>,
+        payload: CrypterCSlice<'a>,
+    ) -> CrypterRustSlice {
         let pass = try_slice!(pass.into());
         let payload = try_slice!(payload.into());
-        super::encrypt(pass, payload).map_or_else(RustSlice::null, RustSlice::from)
+        super::encrypt(pass, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
     }
 
+    /// Decrypts the payload with AES256 GCM
+    ///
+    /// A wrapper around [`decrypt`](../fn.decrypt.html)
+    ///
+    /// # Safety
+    ///
+    /// This method does not take ownership of the parameters
     #[no_mangle]
-    pub extern "C" fn decrypt<'a>(pass: CSlice<'a>, payload: CSlice<'a>) -> RustSlice {
+    pub extern "C" fn crypter_decrypt<'a>(
+        pass: CrypterCSlice<'a>,
+        payload: CrypterCSlice<'a>,
+    ) -> CrypterRustSlice {
         let pass = try_slice!(pass.into());
         let payload = try_slice!(payload.into());
-        super::decrypt(pass, payload).map_or_else(RustSlice::null, RustSlice::from)
+        super::decrypt(pass, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
     }
 }
 
