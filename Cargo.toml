@@ -4,14 +4,15 @@ version = "0.1.0"
 authors = ["Marcelo Lima <marcelowind@gmail.com>"]
 edition = "2018"
 
-[dependencies]
-aes-gcm = "0.6"
-bincode = "1"
-miniz_oxide = { version = "0.4", optional = true }
-serde = { version = "1", features = ["derive"] }
-sha2 = "0.9"
-thiserror = "1"
+[lib]
+crate-type = ["cdylib"]
 
-[features]
-default = []
-compress = [ "miniz_oxide" ]
+[profile.release]
+lto = true
+codegen-units = 1
+
+[dependencies]
+aes-gcm = "0.9"
+base64 = "0.13"
+rand = "0.8"
+sha2 = "0.9"
