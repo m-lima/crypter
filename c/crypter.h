@@ -3,11 +3,19 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-typedef struct Slice_u8 {
+typedef struct RustSlice {
+  uint8_t *ptr;
+  uintptr_t len;
+  uintptr_t capacity;
+} RustSlice;
+
+typedef struct CSlice {
   const uint8_t *ptr;
   uintptr_t len;
-} Slice_u8;
+} CSlice;
 
-struct Slice_u8 encrypt(struct Slice_u8 pass, struct Slice_u8 payload);
+void rust_slice_free(struct RustSlice slice);
 
-struct Slice_u8 decrypt(struct Slice_u8 pass, struct Slice_u8 payload);
+struct RustSlice encrypt(struct CSlice pass, struct CSlice payload);
+
+struct RustSlice decrypt(struct CSlice pass, struct CSlice payload);

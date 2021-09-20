@@ -61,7 +61,7 @@ pub mod c {
             if let Some(slice) = $slice {
                 slice
             } else {
-                return Slice::null();
+                return RustSlice::null();
             }
         };
     }
@@ -70,25 +70,14 @@ pub mod c {
 
     #[repr(C)]
     #[derive(Copy, Clone, Debug)]
-    pub struct Slice<'a, T> {
-        ptr: *const T,
+    pub struct CSlice<'a> {
+        ptr: *const u8,
         len: usize,
         _lifetime: std::marker::PhantomData<&'a ()>,
     }
 
-    impl<T> Slice<'_, T> {
-        #[must_use]
-        pub fn null() -> Self {
-            Self {
-                ptr: std::ptr::null(),
-                len: 0,
-                _lifetime: std::marker::PhantomData::default(),
-            }
-        }
-    }
-
-    impl<'a, T> From<Slice<'a, T>> for Option<&'a [T]> {
-        fn from(slice: Slice<'a, T>) -> Self {
+    impl<'a> From<CSlice<'a>> for Option<&'a [u8]> {
+        fn from(slice: CSlice<'a>) -> Self {
             if slice.ptr.is_null() {
                 None
             } else {
@@ -97,66 +86,57 @@ pub mod c {
         }
     }
 
-    impl<'a, T> From<Vec<T>> for Slice<'a, T> {
-        fn from(vec: Vec<T>) -> Self {
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug)]
+    pub struct RustSlice {
+        ptr: *mut u8,
+        len: usize,
+        capacity: usize,
+    }
+
+    impl RustSlice {
+        #[must_use]
+        pub fn null() -> Self {
             Self {
-                ptr: vec.as_ptr(),
+                ptr: std::ptr::null_mut(),
+                len: 0,
+                capacity: 0,
+            }
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn rust_slice_free(slice: RustSlice) {
+        if !slice.ptr.is_null() {
+            std::mem::drop(unsafe { Vec::from_raw_parts(slice.ptr, slice.len, slice.capacity) });
+        }
+    }
+
+    // TODO: Use Vec::into_raw_parts() when available
+    impl From<Vec<u8>> for RustSlice {
+        fn from(mut vec: Vec<u8>) -> Self {
+            let rust_slice = Self {
+                ptr: vec.as_mut_ptr(),
                 len: vec.len(),
-                _lifetime: std::marker::PhantomData::default(),
-            }
-        }
-    }
-
-    // Not used
-    impl<'a, T> From<&'a [T]> for Slice<'a, T> {
-        fn from(slice: &'a [T]) -> Self {
-            Self {
-                ptr: slice.as_ptr(),
-                len: slice.len(),
-                _lifetime: std::marker::PhantomData::default(),
-            }
-        }
-    }
-
-    // Not used
-    impl<'a, T> std::convert::TryInto<&'a [T]> for Slice<'a, T> {
-        type Error = NullPointer;
-
-        fn try_into(self) -> Result<&'a [T], Self::Error> {
-            if self.ptr.is_null() {
-                Err(NullPointer)
-            } else {
-                Ok(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })
-            }
+                capacity: vec.capacity(),
+            };
+            std::mem::forget(vec);
+            rust_slice
         }
     }
 
     #[no_mangle]
-    pub extern "C" fn encrypt<'a, 'r>(
-        pass: Slice<'a, u8>,
-        payload: Slice<'a, u8>,
-    ) -> Slice<'r, u8> {
+    pub extern "C" fn encrypt<'a>(pass: CSlice<'a>, payload: CSlice<'a>) -> RustSlice {
         let pass = try_slice!(pass.into());
         let payload = try_slice!(payload.into());
-
-        {
-            let pass = unsafe { String::from_utf8_unchecked(Vec::from(pass)) };
-            let payload = unsafe { String::from_utf8_unchecked(Vec::from(payload)) };
-            println!("Encrypt");
-            println!("Pass: {:?}", pass);
-            println!("Payload: {:?}", payload);
-        }
-        super::encrypt(pass, payload).map_or_else(Slice::null, Slice::from)
+        super::encrypt(pass, payload).map_or_else(RustSlice::null, RustSlice::from)
     }
 
     #[no_mangle]
-    pub extern "C" fn decrypt<'a, 'r>(
-        pass: Slice<'a, u8>,
-        payload: Slice<'a, u8>,
-    ) -> Slice<'r, u8> {
+    pub extern "C" fn decrypt<'a>(pass: CSlice<'a>, payload: CSlice<'a>) -> RustSlice {
         let pass = try_slice!(pass.into());
         let payload = try_slice!(payload.into());
-        super::decrypt(pass, payload).map_or_else(Slice::null, Slice::from)
+        super::decrypt(pass, payload).map_or_else(RustSlice::null, RustSlice::from)
     }
 }
 

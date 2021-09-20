@@ -7,23 +7,33 @@ int main() {
   const char *pass = "1234567890123456";
   const char *payload = "bla ble bli blo blu";
 
-  Slice_u8 pass_slice = {.ptr = pass, .len = strlen(pass)};
+  CSlice pass_slice = {.ptr = (const unsigned char *)pass, .len = strlen(pass)};
 
-  Slice_u8 encrypted =
-      encrypt(pass_slice, (Slice_u8){.ptr = payload, .len = strlen(payload)});
+  RustSlice encrypted =
+      encrypt(pass_slice, (CSlice){.ptr = (const unsigned char *)payload,
+                                   .len = strlen(payload)});
 
-  Slice_u8 decrypted = decrypt(pass_slice, encrypted);
+  CSlice encrypted_slice = {.ptr = encrypted.ptr, .len = encrypted.len};
+
+  RustSlice decrypted = decrypt(pass_slice, encrypted_slice);
 
   if (decrypted.ptr) {
-    for (int i = 0; i <= decrypted.len; i++) {
+    for (int i = 0; i < decrypted.len; i++) {
       if (decrypted.ptr[i] == 0) {
         putchar('0');
       } else {
         putchar(decrypted.ptr[i]);
       }
     }
-    free(decrypted.ptr);
+    putchar('\n');
   } else {
     puts("Null return");
+  }
+
+  rust_slice_free(encrypted);
+  rust_slice_free(decrypted);
+
+  if (decrypted.ptr) {
+    puts("Freed successfully");
   }
 }
