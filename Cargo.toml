@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Marcelo Lima <marcelowind@gmail.com>"]
 edition = "2018"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lib]
 crate-type = ["cdylib"]
 
@@ -14,5 +17,13 @@ codegen-units = 1
 [dependencies]
 aes-gcm = "0.9"
 base64 = "0.13"
+getrandom = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
 rand = "0.8"
 sha2 = "0.9"
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+default = []
+ffi = []
+wasm = [ "wasm-bindgen", "js-sys", "getrandom/js" ]

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8"/>
+    <title>crypter</title>
+  </head>
+  <body>
+    <script type="module">
+      import init from "./crypter.js";
+
+      init("./crypter_bg.wasm").then(() => {
+        const crypter = import('./crypter.js')
+        crypter.then(c => {
+          const encoder = new TextEncoder();
+          const pass = encoder.encode('supersecret');
+          const encrypted = c.encrypt(pass, encoder.encode('mega ultra safe payload'));
+          const decrypted = c.decrypt(pass, encrypted);
+          console.log('Encrypted: ', new TextDecoder().decode(decrypted));
+        });
+      });
+    </script>
+  </body>
+</html>

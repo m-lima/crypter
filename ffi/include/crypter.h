@@ -1,7 +1,6 @@
-#include <stdarg.h>
-#include <stdbool.h>
+#pragma once
+
 #include <stdint.h>
-#include <stdlib.h>
 
 /**
  * Represents a slice of bytes owned by Rust

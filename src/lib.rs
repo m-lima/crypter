@@ -1,4 +1,5 @@
 #![deny(warnings, clippy::pedantic, clippy::all, rust_2018_idioms)]
+
 type Nonce = [u8; 12];
 
 fn nonce() -> Nonce {
@@ -69,6 +70,8 @@ pub fn decrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     cipher.decrypt(&nonce, &payload[..payload.len() - 12]).ok()
 }
 
+/// cbindgen:ignore-feature
+#[cfg(feature = "ffi")]
 pub mod ffi {
 
     macro_rules! try_slice {
@@ -187,7 +190,23 @@ pub mod ffi {
     }
 }
 
-pub mod wasm {}
+#[cfg(feature = "wasm")]
+pub mod wasm {
+    use wasm_bindgen::prelude::*;
+
+    #[wasm_bindgen]
+    #[must_use]
+    pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
+        super::encrypt(pass, payload)
+    }
+
+    #[wasm_bindgen]
+    #[must_use]
+    #[allow(clippy::option_if_let_else)]
+    pub fn decrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
+        super::decrypt(pass, payload)
+    }
+}
 
 #[cfg(test)]
 mod test {
