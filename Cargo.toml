@@ -1,14 +1,14 @@
 [package]
 name = "crypter"
 version = "0.1.0"
-authors = ["Marcelo Lima <marcelowind@gmail.com>"]
+authors = [ "Marcelo Lima <marcelowind@gmail.com>" ]
 edition = "2018"
 
 [package.metadata.docs.rs]
 all-features = true
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = [ "cdylib", "lib" ]
 
 [profile.release]
 lto = true

@@ -1,0 +1,11 @@
+[package]
+name = "encrypter"
+version = "0.1.0"
+authors = [ "Marcelo Lima <marcelowind@gmail.com>" ]
+edition = "2018"
+
+[dependencies]
+base64 = "0.13.0"
+clap = "3.0.0-beta.4"
+crypter = { path = ".." }
+rpassword = "5.0.1"
