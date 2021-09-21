@@ -4,6 +4,8 @@ WASM_BG = $(PWD)/web/crypter.js
 
 WASM = $(PWD)/../../../target/wasm32-unknown-unknown/release/crypter.wasm
 
+.PHONY: all clean
+
 all: $(INDEX)
 
 $(INDEX): $(WASM_BG)
