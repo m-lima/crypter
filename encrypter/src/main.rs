@@ -78,6 +78,6 @@ fn main() {
         std::mem::drop(stdout.write_all(&encrypted));
         std::mem::drop(stdout.flush());
     } else {
-        println!("{}", base64::encode(encrypted));
+        print!("{}", base64::encode(encrypted));
     }
 }
