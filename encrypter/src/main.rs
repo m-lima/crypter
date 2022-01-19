@@ -1,6 +1,6 @@
 #![deny(warnings, clippy::pedantic, clippy::all, rust_2018_idioms)]
 
-#[derive(clap::Clap, Debug)]
+#[derive(clap::Parser, Debug)]
 #[clap(name = "Encrypter", version)]
 struct Args {
     /// Print the output as raw bytes.
@@ -25,7 +25,7 @@ struct Args {
 }
 
 fn main() {
-    use clap::Clap;
+    use clap::Parser;
     let args = Args::parse();
 
     if args.payload.is_empty() {
