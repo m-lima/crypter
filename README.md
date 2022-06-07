@@ -22,7 +22,7 @@ println!("{}", String::from_utf8(decrypted).expect("Invalid decrypted string"));
 
 ## FFI examples
 ### C example: [example.c](../../blob/master/ffi/examples/c/example.c)
-```
+```c
 #include <stdio.h>
 #include <string.h>
 
@@ -62,7 +62,7 @@ int main() {
 ```
 
 ### Lua example: [example.lua](../../blob/master/ffi/examples/lua/example.lua)
-```
+```lua
 local ffi = require('ffi')
 
 ffi.cdef[[
@@ -103,7 +103,7 @@ end
 ```
 
 ### WASM example: [index.html](../../blob/master/ffi/examples/wasm/index.html)
-```
+```html
 <!DOCTYPE html>
 <html>
   <head>

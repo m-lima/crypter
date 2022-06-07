@@ -19,7 +19,7 @@
 //!
 //! # FFI examples
 //! ## C example: [example.c](../../blob/master/ffi/examples/c/example.c)
-//! ```text
+//! ```c
 //! #include <stdio.h>
 //! #include <string.h>
 //!
@@ -59,7 +59,7 @@
 //! ```
 //!
 //! ## Lua example: [example.lua](../../blob/master/ffi/examples/lua/example.lua)
-//! ```text
+//! ```lua
 //! local ffi = require('ffi')
 //!
 //! ffi.cdef[[
@@ -100,7 +100,7 @@
 //! ```
 //!
 //! ## WASM example: [index.html](../../blob/master/ffi/examples/wasm/index.html)
-//! ```text
+//! ```html
 //! <!DOCTYPE html>
 //! <html>
 //!   <head>
