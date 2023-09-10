@@ -1,0 +1,67 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - v*
+
+env:
+  CRATE_NAME: crypter
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Prepare Cargo
+        uses: dtolnay/rust-toolchain@stable
+      - name: Check version
+        run: |
+          version=`cargo metadata | jq -r '.packages[] | select(.name == "${{ env.CRATE_NAME }}") | .version'`
+          version=v"${version}"
+          [ "${version}" ] && [ "${version}" == "${{ github.ref_name }}" ]
+
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Prepare Cargo
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+      - name: Check main
+        run: cargo hack --feature-powerset check --verbose --workspace
+      - name: Check tests
+        run: cargo hack --feature-powerset check --verbose --workspace --tests
+      - name: Check examples
+        run: cargo hack --feature-powerset check --verbose --workspace --examples
+      - name: Lint main
+        run: cargo hack --feature-powerset clippy --verbose --workspace -- -W clippy::pedantic
+      - name: Lint tests
+        run: cargo hack --feature-powerset clippy --verbose --workspace --tests -- -W clippy::pedantic
+      - name: Lint examples
+        run: cargo hack --feature-powerset clippy --verbose --workspace --examples -- -W clippy::pedantic
+      - name: Test
+        run: cargo hack test --verbose --workspace --no-fail-fast
+
+  publish:
+    name: Publish
+    needs: [version, check]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Prepare Cargo
+      uses: dtolnay/rust-toolchain@stable
+    - name: katyo/publish-crates@v2
+      with:
+        registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}

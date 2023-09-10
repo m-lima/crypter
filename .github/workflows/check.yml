@@ -1,0 +1,41 @@
+name: Check
+
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - v*
+
+env:
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Prepare Cargo
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+      - name: Check main
+        run: cargo hack --feature-powerset check --verbose --workspace
+      - name: Check tests
+        run: cargo hack --feature-powerset check --verbose --workspace --tests
+      - name: Check examples
+        run: cargo hack --feature-powerset check --verbose --workspace --examples
+      - name: Lint main
+        run: cargo hack --feature-powerset clippy --verbose --workspace -- -W clippy::pedantic
+      - name: Lint tests
+        run: cargo hack --feature-powerset clippy --verbose --workspace --tests -- -W clippy::pedantic
+      - name: Lint examples
+        run: cargo hack --feature-powerset clippy --verbose --workspace --examples -- -W clippy::pedantic
+      - name: Test
+        run: cargo hack test --verbose --workspace --no-fail-fast
