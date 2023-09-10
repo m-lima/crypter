@@ -1,4 +1,5 @@
 #![deny(warnings, clippy::pedantic, clippy::all, rust_2018_idioms)]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 //! The crypter crate provides Rust and FFI for encryption and decryption using AES-GCM 256-bits.
 //!
@@ -135,7 +136,7 @@ fn nonce() -> Nonce {
 
 /// Encrypts the payload with AES256 GCM. The iv is randomly generated for each call
 ///
-/// Returns [`None`](std::option::Option::None) if an error occurred.
+/// Returns [`None`] if an error occurred.
 ///
 /// # Example
 /// ```
@@ -168,7 +169,7 @@ pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
 
 /// Decrypts the payload with AES256 GCM
 ///
-/// Returns [`None`](std::option::Option::None) if an error occurred.
+/// Returns [`None`] if an error occurred.
 ///
 /// # Example
 /// ```
@@ -200,7 +201,6 @@ pub fn decrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     cipher.decrypt(&nonce, &payload[..payload.len() - 12]).ok()
 }
 
-/// cbindgen:ignore-feature
 #[cfg(feature = "ffi")]
 pub mod ffi {
 
@@ -213,8 +213,6 @@ pub mod ffi {
             }
         };
     }
-
-    pub struct NullPointer;
 
     /// Represents a slice of bytes owned by the caller
     #[repr(C)]

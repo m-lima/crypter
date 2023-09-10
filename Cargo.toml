@@ -10,16 +10,14 @@ categories = [ "cryptography" ]
 description = "A AES-GCM 256 encryption and decryption library."
 license = "MIT"
 
-[package.metadata.docs.rs]
-all-features = true
-
 [lib]
 path = "src/lib.rs"
 crate-type = [ "cdylib", "lib" ]
 
-[profile.release]
-lto = true
-codegen-units = 1
+[features]
+default = []
+ffi = []
+wasm = [ "wasm-bindgen", "js-sys", "getrandom/js" ]
 
 [dependencies]
 aes-gcm = "0.10.2"
@@ -30,7 +28,10 @@ rand = "0.8.5"
 sha2 = "0.10.7"
 wasm-bindgen = { version = "0.2.87", optional = true }
 
-[features]
-default = []
-ffi = []
-wasm = [ "wasm-bindgen", "js-sys", "getrandom/js" ]
+[profile.release]
+lto = true
+codegen-units = 1
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

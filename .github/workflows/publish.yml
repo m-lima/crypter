@@ -10,19 +10,33 @@ env:
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
-  version:
-    name: Version
+  metadata:
+    name: Metadata
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Prepare Cargo
         uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-readme
+        run: |
+          cargo install cargo-hack
+          if [ -f "README.tpl" ]
+          then
+            cargo install cargo-readme
+          fi
       - name: Check version
         run: |
           version=`cargo metadata | jq -r '.packages[] | select(.name == "${{ env.CRATE_NAME }}") | .version'`
           version=v"${version}"
           [ "${version}" ] && [ "${version}" == "${{ github.ref_name }}" ]
+      - name: Check readme
+        run: |
+          if [ -f "README.tpl" ]
+          then
+            cargo readme > README.md2
+            diff README.md README.md2
+          fi
 
   check:
     name: Check
@@ -57,7 +71,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [version, check]
+    needs: [metadata, check]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
