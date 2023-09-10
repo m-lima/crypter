@@ -148,7 +148,7 @@ fn nonce() -> Nonce {
 pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     use aes_gcm::aead::generic_array::GenericArray;
     use aes_gcm::aead::Aead;
-    use aes_gcm::aead::NewAead;
+    use aes_gcm::aead::KeyInit;
     use sha2::Digest;
 
     let secret = {
@@ -182,7 +182,7 @@ pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
 pub fn decrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     use aes_gcm::aead::generic_array::GenericArray;
     use aes_gcm::aead::Aead;
-    use aes_gcm::aead::NewAead;
+    use aes_gcm::aead::KeyInit;
     use sha2::Digest;
 
     let secret = {
