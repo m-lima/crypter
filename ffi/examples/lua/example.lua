@@ -1,6 +1,6 @@
 local ffi = require('ffi')
 
-ffi.cdef[[
+ffi.cdef [[
   typedef struct Slice { uint8_t * ptr; size_t len; } Slice;
   typedef struct RustSlice { uint8_t * ptr; size_t len; size_t capacity; } RustSlice;
 
@@ -11,13 +11,9 @@ ffi.cdef[[
 
 local function slice_from_str(text)
   local slice = ffi.new('Slice')
-  local ptr = ffi.new('uint8_t[?]', #text)
-
-  ffi.copy(ptr, text, #text)
-
-  slice.ptr = ffi.cast('uint8_t *', ptr)
+  slice.ptr = ffi.cast('uint8_t *', text)
   slice.len = #text
-  return slice, ptr
+  return slice, text
 end
 
 local function relax_rust_slice(rust_slice)
@@ -29,7 +25,7 @@ local function relax_rust_slice(rust_slice)
 end
 
 -- Adapt this to your OS dynamic library format
-crypter = ffi.load('../../../target/release/libcrypter.dylib')
+local crypter = ffi.load('../../../target/release/libcrypter.dylib')
 
 local pass, pass_ptr = slice_from_str('supersecret')
 local payload, payload_ptr = slice_from_str('mega ultra safe payload')
