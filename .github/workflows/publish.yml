@@ -7,36 +7,24 @@ on:
 
 env:
   CRATE_NAME: crypter
+  CHECK_README: true
+  CHECK_BINDGEN: ffi/include/crypter.h
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
-  metadata:
-    name: Metadata
+  version:
+    name: Version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Prepare Cargo
         uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-readme
-        run: |
-          cargo install cargo-hack
-          if [ -f "README.tpl" ]
-          then
-            cargo install cargo-readme
-          fi
       - name: Check version
         run: |
           version=`cargo metadata | jq -r '.packages[] | select(.name == "${{ env.CRATE_NAME }}") | .version'`
           version=v"${version}"
           [ "${version}" ] && [ "${version}" == "${{ github.ref_name }}" ]
-      - name: Check readme
-        run: |
-          if [ -f "README.tpl" ]
-          then
-            cargo readme > README.md2
-            diff README.md README.md2
-          fi
 
   check:
     name: Check
@@ -54,6 +42,16 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Install cargo-hack
         run: cargo install cargo-hack
+      - name: Check readme
+        if: env.CHECK_README
+        run: |
+          cargo install cargo-readme
+          diff README.md <(cargo readme)
+      - name: Check bindgen
+        if: ${{ env.CHECK_BINDGEN }} != ''
+        run: |
+          cargo install cargo-cbindgen
+          diff ${{ env.CHECK_BINDGEN }} <(cbindgen .)
       - name: Check main
         run: cargo hack --feature-powerset check --verbose --workspace
       - name: Check tests
@@ -71,7 +69,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [metadata, check]
+    needs: [version, check]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
