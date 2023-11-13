@@ -50,7 +50,7 @@ jobs:
       - name: Check bindgen
         if: ${{ env.CHECK_BINDGEN }} != ''
         run: |
-          cargo install cargo-cbindgen
+          cargo install cbindgen
           diff ${{ env.CHECK_BINDGEN }} <(cbindgen .)
       - name: Check main
         run: cargo hack --feature-powerset check --verbose --workspace
