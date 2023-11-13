@@ -139,10 +139,17 @@
 /// let encrypted = crypter::encrypt(pass.as_bytes(), payload.as_bytes());
 /// ```
 #[must_use]
-pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
+pub fn encrypt<Pass, Payload>(pass: Pass, payload: Payload) -> Option<Vec<u8>>
+where
+    Pass: AsRef<[u8]>,
+    Payload: AsRef<[u8]>,
+{
     use aes_gcm_siv::aead::generic_array::GenericArray;
     use aes_gcm_siv::aead::Aead;
     use aes_gcm_siv::aead::KeyInit;
+
+    let pass = pass.as_ref();
+    let payload = payload.as_ref();
 
     let nonce = nonce();
     let key = derive_key(pass);
@@ -167,10 +174,17 @@ pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
 /// let encrypted = crypter::encrypt(pass.as_bytes(), payload);
 /// ```
 #[must_use]
-pub fn decrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
+pub fn decrypt<Pass, Payload>(pass: Pass, payload: Payload) -> Option<Vec<u8>>
+where
+    Pass: AsRef<[u8]>,
+    Payload: AsRef<[u8]>,
+{
     use aes_gcm_siv::aead::generic_array::GenericArray;
     use aes_gcm_siv::aead::Aead;
     use aes_gcm_siv::aead::KeyInit;
+
+    let pass = pass.as_ref();
+    let payload = payload.as_ref();
 
     let nonce = aes_gcm_siv::Nonce::from_slice(&payload[payload.len() - 12..]);
     let key = derive_key(pass);
@@ -198,7 +212,7 @@ pub mod ffi {
 
     macro_rules! try_slice {
         ($slice:expr) => {
-            if let Some(slice) = $slice {
+            if let Some(slice) = Option::<&[u8]>::from($slice) {
                 slice
             } else {
                 return CrypterRustSlice::null();
@@ -258,7 +272,7 @@ pub mod ffi {
     #[no_mangle]
     pub extern "C" fn crypter_free_slice(slice: CrypterRustSlice) {
         if !slice.ptr.is_null() {
-            std::mem::drop(unsafe { Vec::from_raw_parts(slice.ptr, slice.len, slice.capacity) });
+            drop(unsafe { Vec::from_raw_parts(slice.ptr, slice.len, slice.capacity) });
         }
     }
 
@@ -287,8 +301,8 @@ pub mod ffi {
         pass: CrypterCSlice<'a>,
         payload: CrypterCSlice<'a>,
     ) -> CrypterRustSlice {
-        let pass = try_slice!(pass.into());
-        let payload = try_slice!(payload.into());
+        let pass = try_slice!(pass);
+        let payload = try_slice!(payload);
         super::encrypt(pass, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
     }
 
@@ -304,8 +318,8 @@ pub mod ffi {
         pass: CrypterCSlice<'a>,
         payload: CrypterCSlice<'a>,
     ) -> CrypterRustSlice {
-        let pass = try_slice!(pass.into());
-        let payload = try_slice!(payload.into());
+        let pass = try_slice!(pass);
+        let payload = try_slice!(payload);
         super::decrypt(pass, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
     }
 }
@@ -337,8 +351,8 @@ mod test {
         let pass = "secret_string";
         let payload = "super secret payload";
 
-        let encrypted = encrypt(pass.as_bytes(), payload.as_bytes()).unwrap();
-        let decrypted = decrypt(pass.as_bytes(), &encrypted).unwrap();
+        let encrypted = encrypt(pass, payload).unwrap();
+        let decrypted = decrypt(pass, encrypted).unwrap();
 
         let recovered = String::from_utf8(decrypted).unwrap();
 
@@ -350,12 +364,12 @@ mod test {
         let pass = "secret_string";
         let payload = "super secret payload";
 
-        let encrypted = encrypt(pass.as_bytes(), payload.as_bytes()).unwrap();
+        let encrypted = encrypt(pass, payload).unwrap();
 
         for i in 0..encrypted.len() {
             let mut corrupted = encrypted.clone();
             corrupted[i] = !corrupted[i];
-            assert_eq!(decrypt(pass.as_bytes(), &corrupted), None);
+            assert_eq!(decrypt(pass, corrupted), None);
         }
     }
 }
