@@ -4,7 +4,7 @@
 [![Cargo](https://img.shields.io/crates/v/crypter.svg)](https://crates.io/crates/crypter)
 [![Documentation](https://docs.rs/crypter/badge.svg)](https://docs.rs/crypter)
 
-The crypter crate provides Rust and FFI for encryption and decryption using AES-GCM 256-bits.
+The crypter crate provides Rust and FFI for encryption and decryption using AES-GCM-SIV 256-bits.
 
 To enable the C api, the feature `ffi` must be enabled.
 To enable the WASM api, the feature `wasm` must be enabled.
