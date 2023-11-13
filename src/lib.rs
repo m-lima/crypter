@@ -1,7 +1,7 @@
 #![deny(warnings, clippy::pedantic, clippy::all, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
-//! The crypter crate provides Rust and FFI for encryption and decryption using AES-GCM 256-bits.
+//! The crypter crate provides Rust and FFI for encryption and decryption using AES-GCM-SIV 256-bits.
 //!
 //! To enable the C api, the feature `ffi` must be enabled.
 //! To enable the WASM api, the feature `wasm` must be enabled.
@@ -127,14 +127,7 @@
 //! </html>
 //! ```
 
-type Nonce = [u8; 12];
-
-fn nonce() -> Nonce {
-    use rand::Rng;
-    rand::thread_rng().gen()
-}
-
-/// Encrypts the payload with AES256 GCM. The iv is randomly generated for each call
+/// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call
 ///
 /// Returns [`None`] if an error occurred.
 ///
@@ -147,19 +140,13 @@ fn nonce() -> Nonce {
 /// ```
 #[must_use]
 pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
-    use aes_gcm::aead::generic_array::GenericArray;
-    use aes_gcm::aead::Aead;
-    use aes_gcm::aead::KeyInit;
-    use sha2::Digest;
+    use aes_gcm_siv::aead::generic_array::GenericArray;
+    use aes_gcm_siv::aead::Aead;
+    use aes_gcm_siv::aead::KeyInit;
 
-    let secret = {
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(pass);
-        hasher.finalize()
-    };
-
-    let nonce = GenericArray::from(nonce());
-    let cipher = aes_gcm::Aes256Gcm::new(GenericArray::from_slice(&secret));
+    let nonce = nonce();
+    let key = derive_key(pass);
+    let cipher = aes_gcm_siv::Aes256GcmSiv::new(GenericArray::from_slice(&key));
 
     cipher.encrypt(&nonce, payload).ok().map(|mut v| {
         v.extend(&nonce);
@@ -167,7 +154,7 @@ pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     })
 }
 
-/// Decrypts the payload with AES256 GCM
+/// Decrypts the payload with AES256 GCM SIV
 ///
 /// Returns [`None`] if an error occurred.
 ///
@@ -181,24 +168,29 @@ pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
 /// ```
 #[must_use]
 pub fn decrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
-    use aes_gcm::aead::generic_array::GenericArray;
-    use aes_gcm::aead::Aead;
-    use aes_gcm::aead::KeyInit;
+    use aes_gcm_siv::aead::generic_array::GenericArray;
+    use aes_gcm_siv::aead::Aead;
+    use aes_gcm_siv::aead::KeyInit;
+
+    let nonce = aes_gcm_siv::Nonce::from_slice(&payload[payload.len() - 12..]);
+    let key = derive_key(pass);
+    let cipher = aes_gcm_siv::Aes256GcmSiv::new(GenericArray::from_slice(&key));
+
+    cipher.decrypt(nonce, &payload[..payload.len() - 12]).ok()
+}
+
+fn derive_key(pass: &[u8]) -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> {
     use sha2::Digest;
 
-    let secret = {
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(pass);
-        hasher.finalize()
-    };
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(pass);
+    hasher.finalize()
+}
 
+fn nonce() -> aes_gcm_siv::Nonce {
     let mut nonce = [0; 12];
-    nonce.copy_from_slice(&payload[payload.len() - 12..]);
-    let nonce = GenericArray::from(nonce);
-
-    let cipher = aes_gcm::Aes256Gcm::new(GenericArray::from_slice(&secret));
-
-    cipher.decrypt(&nonce, &payload[..payload.len() - 12]).ok()
+    aes_gcm_siv::aead::rand_core::RngCore::fill_bytes(&mut aes_gcm_siv::aead::OsRng, &mut nonce);
+    aes_gcm_siv::Nonce::from(nonce)
 }
 
 #[cfg(feature = "ffi")]
@@ -283,7 +275,7 @@ pub mod ffi {
         }
     }
 
-    /// Encrypts the payload with AES256 GCM. The iv is randomly generated for each call
+    /// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call
     ///
     /// A wrapper around [`encrypt`](../fn.encrypt.html)
     ///
@@ -300,7 +292,7 @@ pub mod ffi {
         super::encrypt(pass, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
     }
 
-    /// Decrypts the payload with AES256 GCM
+    /// Decrypts the payload with AES256 GCM SIV
     ///
     /// A wrapper around [`decrypt`](../fn.decrypt.html)
     ///
