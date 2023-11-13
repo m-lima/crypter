@@ -34,7 +34,7 @@ typedef struct CrypterCSlice {
 void crypter_free_slice(struct CrypterRustSlice slice);
 
 /**
- * Encrypts the payload with AES256 GCM. The iv is randomly generated for each call
+ * Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call
  *
  * A wrapper around [`encrypt`](../fn.encrypt.html)
  *
@@ -45,7 +45,7 @@ void crypter_free_slice(struct CrypterRustSlice slice);
 struct CrypterRustSlice crypter_encrypt(struct CrypterCSlice pass, struct CrypterCSlice payload);
 
 /**
- * Decrypts the payload with AES256 GCM
+ * Decrypts the payload with AES256 GCM SIV
  *
  * A wrapper around [`decrypt`](../fn.decrypt.html)
  *
