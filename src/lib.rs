@@ -133,6 +133,9 @@
 ///
 /// Returns [`None`] if an error occurred.
 ///
+/// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
+/// It is assumed that all security precautions were taken with the `key` before calling this function.
+///
 /// # Example
 /// ```
 /// # fn get_key() -> &'static [u8] { &[] }
@@ -166,6 +169,9 @@ where
 /// Decrypts the payload with AES256 GCM SIV
 ///
 /// Returns [`None`] if an error occurred.
+///
+/// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
+/// It is assumed that all security precautions were taken with the `key` before calling this function.
 ///
 /// # Example
 /// ```
@@ -213,8 +219,12 @@ fn nonce() -> aes_gcm_siv::Nonce {
     aes_gcm_siv::Nonce::from(nonce)
 }
 
+#[cfg(feature = "stream")]
+pub mod stream;
+
 #[cfg(feature = "ffi")]
 pub mod ffi {
+    //! FFI bindings for `crypter`
 
     macro_rules! try_slice {
         ($slice:expr) => {
@@ -332,10 +342,15 @@ pub mod ffi {
 
 #[cfg(feature = "wasm")]
 pub mod wasm {
+    //! WASM bindings for `crypter`
+
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
     #[must_use]
+    /// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call
+    ///
+    /// A wrapper around [`encrypt`](../fn.encrypt.html)
     pub fn encrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
         super::encrypt(key, payload)
     }
@@ -343,6 +358,9 @@ pub mod wasm {
     #[wasm_bindgen]
     #[must_use]
     #[allow(clippy::option_if_let_else)]
+    /// Decrypts the payload with AES256 GCM SIV
+    ///
+    /// A wrapper around [`decrypt`](../fn.decrypt.html)
     pub fn decrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
         super::decrypt(key, payload)
     }
