@@ -98,30 +98,11 @@ where
     ///
     /// When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
     /// that stage, this function will fail.
-    pub fn new<Key>(key: Key, mut output: Out) -> std::io::Result<Self>
+    pub fn new<Key>(key: Key, output: Out) -> std::io::Result<Self>
     where
         Key: AsRef<[u8]>,
     {
-        use aes_gcm_siv::aead::KeyInit;
-
-        let key = super::normalize_key(key.as_ref());
-        let nonce = make_nonce();
-
-        output.write_all(&nonce)?;
-
-        let stream = Some(aead::stream::EncryptorLE31::from_aead(
-            aes_gcm_siv::Aes256GcmSiv::new(&key),
-            nonce.as_slice().into(),
-        ));
-        let buffer = Vec::with_capacity(DEFAULT_CHUNK);
-        let plain_capacity = buffer.capacity() - std::mem::size_of::<aes_gcm_siv::Tag>();
-
-        Ok(Self {
-            stream,
-            buffer,
-            output,
-            plain_capacity,
-        })
+        Self::with_chunk(key, output, DEFAULT_CHUNK)
     }
 
     /// Creates a new [`Encrypter`] using the writer `output` and a chunk size `chunk` encrypted with
@@ -319,29 +300,11 @@ where
     ///
     /// When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
     /// happens at that stage, this function will fail.
-    pub fn new<Key>(key: Key, mut input: In) -> std::io::Result<Self>
+    pub fn new<Key>(key: Key, input: In) -> std::io::Result<Self>
     where
         Key: AsRef<[u8]>,
     {
-        use aead::KeyInit;
-
-        let key = super::normalize_key(key.as_ref());
-
-        let mut nonce = [0; 8];
-        input.read_exact(&mut nonce)?;
-
-        let stream = Some(aead::stream::DecryptorLE31::from_aead(
-            aes_gcm_siv::Aes256GcmSiv::new(&key),
-            nonce.as_slice().into(),
-        ));
-        let buffer = Vec::with_capacity(DEFAULT_CHUNK);
-
-        Ok(Self {
-            stream,
-            buffer,
-            cursor: 0,
-            input,
-        })
+        Self::with_chunk(key, input, DEFAULT_CHUNK)
     }
 
     /// Creates a new [`Decrypter`] using the reader `input` and a chunk size `chunk` decrypted
