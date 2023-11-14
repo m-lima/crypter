@@ -42,7 +42,7 @@ void crypter_free_slice(struct CrypterRustSlice slice);
  *
  * This method does not take ownership of the parameters
  */
-struct CrypterRustSlice crypter_encrypt(struct CrypterCSlice pass, struct CrypterCSlice payload);
+struct CrypterRustSlice crypter_encrypt(struct CrypterCSlice key, struct CrypterCSlice payload);
 
 /**
  * Decrypts the payload with AES256 GCM SIV
@@ -53,4 +53,4 @@ struct CrypterRustSlice crypter_encrypt(struct CrypterCSlice pass, struct Crypte
  *
  * This method does not take ownership of the parameters
  */
-struct CrypterRustSlice crypter_decrypt(struct CrypterCSlice pass, struct CrypterCSlice payload);
+struct CrypterRustSlice crypter_decrypt(struct CrypterCSlice key, struct CrypterCSlice payload);

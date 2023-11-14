@@ -13,11 +13,11 @@ See the [examples](../../blob/master/ffi/examples) for working FFI applications.
 ## Examples
 
 ```rust
-let pass = "superscret";
+let key = get_key();
 let payload = "mega ultra safe payload";
 
-let encrypted = crypter::encrypt(pass.as_bytes(), payload.as_bytes()).expect("Failed to encrypt");
-let decrypted = crypter::decrypt(pass.as_bytes(), &encrypted).expect("Failed to decrypt");
+let encrypted = crypter::encrypt(key, payload).expect("Failed to encrypt");
+let decrypted = crypter::decrypt(key, encrypted).expect("Failed to decrypt");
 println!("{}", String::from_utf8(decrypted).expect("Invalid decrypted string"));
 ```
 
@@ -29,20 +29,21 @@ println!("{}", String::from_utf8(decrypted).expect("Invalid decrypted string"));
 
 #include <crypter.h>
 
+const char * get_key();
+
 int main() {
-  const char *pass = "supersecret";
+  const char *key = get_key();
   const char *payload = "mega ultra safe payload";
 
-  CrypterCSlice pass_slice = {.ptr = (const unsigned char *)pass,
-                              .len = strlen(pass)};
+  CrypterCSlice key_slice = {.ptr = (const unsigned char *)key, .len = strlen(key)};
 
   CrypterRustSlice encrypted = crypter_encrypt(
-      pass_slice, (CrypterCSlice){.ptr = (const unsigned char *)payload,
-                                  .len = strlen(payload)});
+      key_slice, (CrypterCSlice){.ptr = (const unsigned char *)payload,
+                                 .len = strlen(payload)});
 
   CrypterCSlice encrypted_slice = {.ptr = encrypted.ptr, .len = encrypted.len};
 
-  CrypterRustSlice decrypted = crypter_decrypt(pass_slice, encrypted_slice);
+  CrypterRustSlice decrypted = crypter_decrypt(key_slice, encrypted_slice);
 
   if (decrypted.ptr) {
     for (int i = 0; i < decrypted.len; i++) {
@@ -70,8 +71,8 @@ ffi.cdef[[
   typedef struct Slice { uint8_t * ptr; size_t len; } Slice;
   typedef struct RustSlice { uint8_t * ptr; size_t len; size_t capacity; } RustSlice;
 
-  RustSlice crypter_encrypt(struct Slice pass, struct Slice payload);
-  RustSlice crypter_decrypt(struct Slice pass, struct Slice payload);
+  RustSlice crypter_encrypt(struct Slice key, struct Slice payload);
+  RustSlice crypter_decrypt(struct Slice key, struct Slice payload);
 ]]
 
 local function slice_from_str(text)
@@ -92,9 +93,9 @@ end
 
 crypter = ffi.load('crypter')
 
-local pass = slice_from_str('supersecret')
-local encrypted = crypter.crypter_encrypt(pass, slice_from_str('mega ultra safe payload'))
-local decrypted = crypter.crypter_decrypt(pass, relax_rust_slice(encrypted))
+local key = require('my_key_getter').get_key()
+local encrypted = crypter.crypter_encrypt(key, slice_from_str('mega ultra safe payload'))
+local decrypted = crypter.crypter_decrypt(key, relax_rust_slice(encrypted))
 
 if decrypted.ptr ~= nil then
   print(ffi.string(decrypted.ptr, decrypted.len))
@@ -116,12 +117,12 @@ end
       import init from "./crypter.js";
 
       init("./crypter_bg.wasm").then(() => {
-        const crypter = import('./crypter.js')
+        const crypter = import('./crypter.js');
         crypter.then(c => {
           const encoder = new TextEncoder();
-          const pass = encoder.encode('supersecret');
-          const encrypted = c.encrypt(pass, encoder.encode('mega ultra safe payload'));
-          const decrypted = c.decrypt(pass, encrypted);
+          const key = encoder.encode('supersecret'); // Bad key. Just as an example
+          const encrypted = c.encrypt(key, encoder.encode('mega ultra safe payload'));
+          const decrypted = c.decrypt(key, encrypted);
           console.log('Encrypted: ', new TextDecoder().decode(decrypted));
         });
       });
