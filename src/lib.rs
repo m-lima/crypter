@@ -213,6 +213,9 @@ fn nonce() -> aes_gcm_siv::Nonce {
     aes_gcm_siv::Nonce::from(nonce)
 }
 
+#[cfg(feature = "stream")]
+pub mod stream;
+
 #[cfg(feature = "ffi")]
 pub mod ffi {
 
