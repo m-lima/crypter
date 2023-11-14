@@ -10,12 +10,13 @@
 //! # Examples
 //!
 //! ```
-//!let pass = "superscret";
-//!let payload = "mega ultra safe payload";
+//! # fn get_key() -> &'static [u8] { &[] }
+//! let key = get_key();
+//! let payload = "mega ultra safe payload";
 //!
-//!let encrypted = crypter::encrypt(pass.as_bytes(), payload.as_bytes()).expect("Failed to encrypt");
-//!let decrypted = crypter::decrypt(pass.as_bytes(), &encrypted).expect("Failed to decrypt");
-//!println!("{}", String::from_utf8(decrypted).expect("Invalid decrypted string"));
+//! let encrypted = crypter::encrypt(key, payload).expect("Failed to encrypt");
+//! let decrypted = crypter::decrypt(key, encrypted).expect("Failed to decrypt");
+//! println!("{}", String::from_utf8(decrypted).expect("Invalid decrypted string"));
 //! ```
 //!
 //! # FFI examples
@@ -26,20 +27,21 @@
 //!
 //! #include <crypter.h>
 //!
+//! const char * get_key();
+//!
 //! int main() {
-//!   const char *pass = "supersecret";
+//!   const char *key = get_key();
 //!   const char *payload = "mega ultra safe payload";
 //!
-//!   CrypterCSlice pass_slice = {.ptr = (const unsigned char *)pass,
-//!                               .len = strlen(pass)};
+//!   CrypterCSlice key_slice = {.ptr = (const unsigned char *)key, .len = strlen(key)};
 //!
 //!   CrypterRustSlice encrypted = crypter_encrypt(
-//!       pass_slice, (CrypterCSlice){.ptr = (const unsigned char *)payload,
-//!                                   .len = strlen(payload)});
+//!       key_slice, (CrypterCSlice){.ptr = (const unsigned char *)payload,
+//!                                  .len = strlen(payload)});
 //!
 //!   CrypterCSlice encrypted_slice = {.ptr = encrypted.ptr, .len = encrypted.len};
 //!
-//!   CrypterRustSlice decrypted = crypter_decrypt(pass_slice, encrypted_slice);
+//!   CrypterRustSlice decrypted = crypter_decrypt(key_slice, encrypted_slice);
 //!
 //!   if (decrypted.ptr) {
 //!     for (int i = 0; i < decrypted.len; i++) {
@@ -67,8 +69,8 @@
 //!   typedef struct Slice { uint8_t * ptr; size_t len; } Slice;
 //!   typedef struct RustSlice { uint8_t * ptr; size_t len; size_t capacity; } RustSlice;
 //!
-//!   RustSlice crypter_encrypt(struct Slice pass, struct Slice payload);
-//!   RustSlice crypter_decrypt(struct Slice pass, struct Slice payload);
+//!   RustSlice crypter_encrypt(struct Slice key, struct Slice payload);
+//!   RustSlice crypter_decrypt(struct Slice key, struct Slice payload);
 //! ]]
 //!
 //! local function slice_from_str(text)
@@ -89,9 +91,9 @@
 //!
 //! crypter = ffi.load('crypter')
 //!
-//! local pass = slice_from_str('supersecret')
-//! local encrypted = crypter.crypter_encrypt(pass, slice_from_str('mega ultra safe payload'))
-//! local decrypted = crypter.crypter_decrypt(pass, relax_rust_slice(encrypted))
+//! local key = require('my_key_getter').get_key()
+//! local encrypted = crypter.crypter_encrypt(key, slice_from_str('mega ultra safe payload'))
+//! local decrypted = crypter.crypter_decrypt(key, relax_rust_slice(encrypted))
 //!
 //! if decrypted.ptr ~= nil then
 //!   print(ffi.string(decrypted.ptr, decrypted.len))
@@ -113,12 +115,12 @@
 //!       import init from "./crypter.js";
 //!
 //!       init("./crypter_bg.wasm").then(() => {
-//!         const crypter = import('./crypter.js')
+//!         const crypter = import('./crypter.js');
 //!         crypter.then(c => {
 //!           const encoder = new TextEncoder();
-//!           const pass = encoder.encode('supersecret');
-//!           const encrypted = c.encrypt(pass, encoder.encode('mega ultra safe payload'));
-//!           const decrypted = c.decrypt(pass, encrypted);
+//!           const key = encoder.encode('supersecret'); // Bad key. Just as an example
+//!           const encrypted = c.encrypt(key, encoder.encode('mega ultra safe payload'));
+//!           const decrypted = c.decrypt(key, encrypted);
 //!           console.log('Encrypted: ', new TextDecoder().decode(decrypted));
 //!         });
 //!       });
@@ -133,27 +135,27 @@
 ///
 /// # Example
 /// ```
-/// let pass = "mysecret";
+/// # fn get_key() -> &'static [u8] { &[] }
+/// let key = get_key();
 /// let payload = "supersecretpayload";
 ///
-/// let encrypted = crypter::encrypt(pass.as_bytes(), payload.as_bytes());
+/// let encrypted = crypter::encrypt(key, payload);
 /// ```
 #[must_use]
-pub fn encrypt<Pass, Payload>(pass: Pass, payload: Payload) -> Option<Vec<u8>>
+pub fn encrypt<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
 where
-    Pass: AsRef<[u8]>,
+    Key: AsRef<[u8]>,
     Payload: AsRef<[u8]>,
 {
-    use aes_gcm_siv::aead::generic_array::GenericArray;
     use aes_gcm_siv::aead::Aead;
     use aes_gcm_siv::aead::KeyInit;
 
-    let pass = pass.as_ref();
+    let key = key.as_ref();
     let payload = payload.as_ref();
 
     let nonce = nonce();
-    let key = derive_key(pass);
-    let cipher = aes_gcm_siv::Aes256GcmSiv::new(GenericArray::from_slice(&key));
+    let key = normalize_key(key);
+    let cipher = aes_gcm_siv::Aes256GcmSiv::new(&key);
 
     cipher.encrypt(&nonce, payload).ok().map(|mut v| {
         v.extend(&nonce);
@@ -167,37 +169,41 @@ where
 ///
 /// # Example
 /// ```
+/// # fn get_key() -> &'static [u8] { &[] }
 /// # fn get_encrypted_payload() -> &'static [u8] { &[] }
-/// let pass = "mysecret";
+/// let key = get_key();
 /// let payload = get_encrypted_payload();
 ///
-/// let encrypted = crypter::encrypt(pass.as_bytes(), payload);
+/// let encrypted = crypter::encrypt(key, payload);
 /// ```
 #[must_use]
-pub fn decrypt<Pass, Payload>(pass: Pass, payload: Payload) -> Option<Vec<u8>>
+pub fn decrypt<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
 where
-    Pass: AsRef<[u8]>,
+    Key: AsRef<[u8]>,
     Payload: AsRef<[u8]>,
 {
-    use aes_gcm_siv::aead::generic_array::GenericArray;
     use aes_gcm_siv::aead::Aead;
     use aes_gcm_siv::aead::KeyInit;
 
-    let pass = pass.as_ref();
+    let key = key.as_ref();
     let payload = payload.as_ref();
 
     let nonce = aes_gcm_siv::Nonce::from_slice(&payload[payload.len() - 12..]);
-    let key = derive_key(pass);
-    let cipher = aes_gcm_siv::Aes256GcmSiv::new(GenericArray::from_slice(&key));
+    let key = normalize_key(key);
+    let cipher = aes_gcm_siv::Aes256GcmSiv::new(&key);
 
     cipher.decrypt(nonce, &payload[..payload.len() - 12]).ok()
 }
 
-fn derive_key(pass: &[u8]) -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> {
+/// Normalize the key into a 256 bit array
+///
+/// This is not a key derivation function, simply a convenience method to accept a &[u8] as input
+/// for the key and normalizing it into the expected length.
+fn normalize_key(key: &[u8]) -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> {
     use sha2::Digest;
 
     let mut hasher = sha2::Sha256::new();
-    hasher.update(pass);
+    hasher.update(key);
     hasher.finalize()
 }
 
@@ -298,12 +304,12 @@ pub mod ffi {
     /// This method does not take ownership of the parameters
     #[no_mangle]
     pub extern "C" fn crypter_encrypt<'a>(
-        pass: CrypterCSlice<'a>,
+        key: CrypterCSlice<'a>,
         payload: CrypterCSlice<'a>,
     ) -> CrypterRustSlice {
-        let pass = try_slice!(pass);
+        let key = try_slice!(key);
         let payload = try_slice!(payload);
-        super::encrypt(pass, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
+        super::encrypt(key, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
     }
 
     /// Decrypts the payload with AES256 GCM SIV
@@ -315,12 +321,12 @@ pub mod ffi {
     /// This method does not take ownership of the parameters
     #[no_mangle]
     pub extern "C" fn crypter_decrypt<'a>(
-        pass: CrypterCSlice<'a>,
+        key: CrypterCSlice<'a>,
         payload: CrypterCSlice<'a>,
     ) -> CrypterRustSlice {
-        let pass = try_slice!(pass);
+        let key = try_slice!(key);
         let payload = try_slice!(payload);
-        super::decrypt(pass, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
+        super::decrypt(key, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
     }
 }
 
@@ -330,15 +336,15 @@ pub mod wasm {
 
     #[wasm_bindgen]
     #[must_use]
-    pub fn encrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
-        super::encrypt(pass, payload)
+    pub fn encrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
+        super::encrypt(key, payload)
     }
 
     #[wasm_bindgen]
     #[must_use]
     #[allow(clippy::option_if_let_else)]
-    pub fn decrypt(pass: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
-        super::decrypt(pass, payload)
+    pub fn decrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
+        super::decrypt(key, payload)
     }
 }
 
@@ -348,11 +354,11 @@ mod test {
 
     #[test]
     fn round_trip() {
-        let pass = "secret_string";
+        let key = "secret_string";
         let payload = "super secret payload";
 
-        let encrypted = encrypt(pass, payload).unwrap();
-        let decrypted = decrypt(pass, encrypted).unwrap();
+        let encrypted = encrypt(key, payload).unwrap();
+        let decrypted = decrypt(key, encrypted).unwrap();
 
         let recovered = String::from_utf8(decrypted).unwrap();
 
@@ -361,15 +367,15 @@ mod test {
 
     #[test]
     fn corrupted_byte() {
-        let pass = "secret_string";
+        let key = "secret_string";
         let payload = "super secret payload";
 
-        let encrypted = encrypt(pass, payload).unwrap();
+        let encrypted = encrypt(key, payload).unwrap();
 
         for i in 0..encrypted.len() {
             let mut corrupted = encrypted.clone();
             corrupted[i] = !corrupted[i];
-            assert_eq!(decrypt(pass, corrupted), None);
+            assert_eq!(decrypt(key, corrupted), None);
         }
     }
 }
