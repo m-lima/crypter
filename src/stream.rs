@@ -41,12 +41,8 @@
 //! }
 //! ```
 
-/// The default chunk size for encryption. That is, 128 KiB
-pub const DEFAULT_CHUNK: usize = 128 * 1024;
-/// Alias to an [`Encrypter`] using the [`DEFAULT_CHUNK`]
-pub type DefautEncrypter<Out> = Encrypter<Out, DEFAULT_CHUNK>;
-/// Alias to a [`Decrypter`] using the [`DEFAULT_CHUNK`]
-pub type DefautDecrypter<Out> = Decrypter<Out, DEFAULT_CHUNK>;
+/// The default chunk size for encryption. That is, 512 KiB
+pub const DEFAULT_CHUNK: usize = 512 * 1024;
 
 const TAG_LEN: usize = std::mem::size_of::<aes_gcm_siv::Tag>();
 
@@ -79,7 +75,7 @@ const TAG_LEN: usize = std::mem::size_of::<aes_gcm_siv::Tag>();
 ///         .expect("Failed to encrypt stream");
 /// }
 /// ```
-pub struct Encrypter<Out, const CHUNK: usize>
+pub struct Encrypter<Out>
 where
     Out: std::io::Write,
 {
@@ -88,12 +84,10 @@ where
     output: Out,
 }
 
-impl<Out, const CHUNK: usize> Encrypter<Out, CHUNK>
+impl<Out> Encrypter<Out>
 where
     Out: std::io::Write,
 {
-    const MAX_CAP: usize = CHUNK - TAG_LEN;
-
     /// Creates a new [`Encrypter`] using the writer `output` and chunk size `CHUNK`.
     ///
     /// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
@@ -118,7 +112,7 @@ where
             aes_gcm_siv::Aes256GcmSiv::new(&key),
             nonce.as_slice().into(),
         ));
-        let buffer = Vec::with_capacity(CHUNK);
+        let buffer = Vec::with_capacity(DEFAULT_CHUNK);
 
         Ok(Self {
             stream,
@@ -151,7 +145,8 @@ where
         }
 
         self.output.write_all(&self.buffer)?;
-        self.buffer.clear();
+        // SAFETY: Nothing more than a `self.buffer.clear()`
+        unsafe { self.buffer.set_len(0) };
         Ok(())
     }
 
@@ -168,39 +163,50 @@ where
         self.output.write_all(&self.buffer)?;
         self.output.flush()
     }
+
+    /// # Safety
+    ///
+    /// The capacity of `self.buffer` must accommodate `buf`
+    unsafe fn fill_buf(&mut self, buf: &[u8]) {
+        let len = self.buffer.len();
+        self.buffer.set_len(len + buf.len());
+        self.buffer[len..].copy_from_slice(buf);
+    }
 }
 
-impl<Out, const CHUNK: usize> std::io::Write for Encrypter<Out, CHUNK>
+impl<Out> std::io::Write for Encrypter<Out>
 where
     Out: std::io::Write,
 {
     fn write(&mut self, mut buf: &[u8]) -> std::io::Result<usize> {
         let mut sent = 0;
-        let mut capacity = Self::MAX_CAP.saturating_sub(self.buffer.len());
+        let max_cap = self.buffer.capacity() - TAG_LEN;
+        let mut rem_cap = max_cap.saturating_sub(self.buffer.len());
 
-        while buf.len() > capacity {
-            self.buffer.extend_from_slice(&buf[..capacity]);
+        while buf.len() > rem_cap {
+            // SAFETY: The length was check before entering the loop
+            unsafe { self.fill_buf(&buf[..rem_cap]) };
             self.flush_block()?;
 
-            buf = &buf[capacity..];
-            sent += capacity;
-            capacity = Self::MAX_CAP;
+            buf = &buf[rem_cap..];
+            sent += rem_cap;
+            rem_cap = max_cap;
         }
 
-        self.buffer.extend_from_slice(buf);
-
-        Ok(sent + self.buffer.len())
+        // SAFETY: The length was checked by the loop before reaching here
+        unsafe { self.fill_buf(buf) };
+        Ok(sent + buf.len())
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        if self.buffer.len() == Self::MAX_CAP {
+        if self.buffer.len() == self.buffer.capacity() - TAG_LEN {
             self.flush_block()?;
         }
         self.output.flush()
     }
 }
 
-impl<Out, const CHUNK: usize> Drop for Encrypter<Out, CHUNK>
+impl<Out> Drop for Encrypter<Out>
 where
     Out: std::io::Write,
 {
@@ -235,7 +241,7 @@ where
 ///     println!("{line}");
 /// }
 /// ```
-pub struct Decrypter<In, const CHUNK: usize>
+pub struct Decrypter<In>
 where
     In: std::io::Read,
 {
@@ -245,7 +251,7 @@ where
     input: In,
 }
 
-impl<In, const CHUNK: usize> Decrypter<In, CHUNK>
+impl<In> Decrypter<In>
 where
     In: std::io::Read,
 {
@@ -274,7 +280,7 @@ where
             aes_gcm_siv::Aes256GcmSiv::new(&key),
             nonce.as_slice().into(),
         ));
-        let buffer = Vec::with_capacity(CHUNK);
+        let buffer = Vec::with_capacity(DEFAULT_CHUNK);
 
         Ok(Self {
             stream,
@@ -285,9 +291,10 @@ where
     }
 
     fn fill_buf(&mut self) -> std::io::Result<()> {
-        unsafe { self.buffer.set_len(CHUNK) };
+        // SAFETY: The unused length will be truncated after reading
+        unsafe { self.buffer.set_len(self.buffer.capacity()) };
         let mut read = 0;
-        while read < CHUNK {
+        while read < self.buffer.capacity() {
             read += {
                 let bytes = self.input.read(&mut self.buffer[read..])?;
                 if bytes == 0 {
@@ -296,13 +303,17 @@ where
                 bytes
             };
         }
+        // SAFETY: Truncating the length to ensure safety from the previous `set_len`
         unsafe { self.buffer.set_len(read) };
         self.cursor = 0;
         Ok(())
     }
 
+    /// # Safety
+    ///
+    /// The presence of `self.stream` must be guaranteed
     unsafe fn decrypt(&mut self) -> std::io::Result<()> {
-        if self.buffer.len() < CHUNK {
+        if self.buffer.len() < self.buffer.capacity() {
             self.stream
                 .take()
                 .unwrap_unchecked()
@@ -320,7 +331,7 @@ where
     }
 }
 
-impl<In, const CHUNK: usize> std::io::Read for Decrypter<In, CHUNK>
+impl<In> std::io::Read for Decrypter<In>
 where
     In: std::io::Read,
 {
@@ -376,12 +387,12 @@ mod tests {
         let mut transient = Vec::with_capacity(usize::from(u8::MAX) * usize::from(u8::MAX));
         let mut output = Vec::with_capacity(usize::from(u8::MAX) * usize::from(u8::MAX));
 
-        let mut encrypter = DefautEncrypter::new([], &mut transient).unwrap();
+        let mut encrypter = Encrypter::new([], &mut transient).unwrap();
         encrypter.write_all(input.as_slice()).unwrap();
         encrypter.finish().unwrap();
         assert_ne!(input, transient);
 
-        let mut decrypter = DefautDecrypter::new([], transient.as_slice()).unwrap();
+        let mut decrypter = Decrypter::new([], transient.as_slice()).unwrap();
         decrypter.read_to_end(&mut output).unwrap();
         assert_eq!(input, output);
     }
@@ -396,20 +407,18 @@ mod tests {
         let mut output = Vec::with_capacity(usize::from(u8::MAX) * usize::from(u8::MAX));
 
         {
-            let mut encrypter = DefautEncrypter::new([], &mut transient).unwrap();
+            let mut encrypter = Encrypter::new([], &mut transient).unwrap();
             encrypter.write_all(input.as_slice()).unwrap();
         }
         assert_ne!(input, transient);
 
-        let mut decrypter = DefautDecrypter::new([], transient.as_slice()).unwrap();
+        let mut decrypter = Decrypter::new([], transient.as_slice()).unwrap();
         decrypter.read_to_end(&mut output).unwrap();
         assert_eq!(input, output);
     }
 
     #[test]
     fn different_block_size() {
-        const CHUNK: usize = 8 * 1024;
-
         let input = (u8::MIN..=u8::MAX)
             .flat_map(|_| (u8::MIN..u8::MAX))
             .collect::<Vec<_>>();
@@ -417,12 +426,12 @@ mod tests {
         let mut transient = Vec::with_capacity(usize::from(u8::MAX) * usize::from(u8::MAX));
         let mut output = Vec::with_capacity(usize::from(u8::MAX) * usize::from(u8::MAX));
 
-        let mut encrypter = DefautEncrypter::new([], &mut transient).unwrap();
+        let mut encrypter = Encrypter::new([], &mut transient).unwrap();
         encrypter.write_all(input.as_slice()).unwrap();
         encrypter.finish().unwrap();
         assert_ne!(input, transient);
 
-        let mut decrypter = Decrypter::<_, CHUNK>::new([], transient.as_slice()).unwrap();
+        let mut decrypter = Decrypter::new([], transient.as_slice()).unwrap();
         let err = decrypter.read_to_end(&mut output).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::Other);
         assert_eq!(err.to_string(), "aead::Error");
