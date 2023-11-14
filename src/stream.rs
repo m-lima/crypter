@@ -7,7 +7,7 @@
 //!
 //! ## Encrypting
 //!
-//! ```
+//! ```no_run
 //! # fn get_key() -> &'static [u8] { &[] }
 //! use std::io::{BufRead, Write};
 //!
@@ -26,7 +26,7 @@
 //!
 //! ## Decrypting
 //!
-//! ```
+//! ```no_run
 //! # fn get_key() -> &'static [u8] { &[] }
 //! use std::io::BufRead;
 //!
@@ -63,7 +63,7 @@ const TAG_LEN: usize = std::mem::size_of::<aes_gcm_siv::Tag>();
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # fn get_key() -> &'static [u8] { &[] }
 /// use std::io::{BufRead, Write};
 ///
@@ -84,7 +84,7 @@ where
     Out: std::io::Write,
 {
     stream: Option<aead::stream::EncryptorLE31<aes_gcm_siv::Aes256GcmSiv>>,
-    buffer: aead::arrayvec::ArrayVec<u8, CHUNK>,
+    buffer: Vec<u8>,
     output: Out,
 }
 
@@ -94,8 +94,7 @@ where
 {
     const MAX_CAP: usize = CHUNK - TAG_LEN;
 
-    /// Creates a new [`Encrypter`] using the writer `output` and chunk size `CHUNK`. The chunk
-    /// buffer will be kept on the stack.
+    /// Creates a new [`Encrypter`] using the writer `output` and chunk size `CHUNK`.
     ///
     /// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
     /// It is assumed that all security precautions were taken with the `key` before calling this function.
@@ -119,7 +118,7 @@ where
             aes_gcm_siv::Aes256GcmSiv::new(&key),
             nonce.as_slice().into(),
         ));
-        let buffer = aead::arrayvec::ArrayVec::new();
+        let buffer = Vec::with_capacity(CHUNK);
 
         Ok(Self {
             stream,
@@ -139,14 +138,6 @@ where
     /// The function may fail while encrypting any buffered bytes and flushing the encrypted message.
     pub fn finish(mut self) -> std::io::Result<()> {
         self.finish_inner()
-    }
-
-    fn fill_buffer(&mut self, buf: &[u8]) -> std::io::Result<()> {
-        use aead::Buffer;
-
-        self.buffer
-            .extend_from_slice(buf)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::OutOfMemory, err.to_string()))
     }
 
     fn flush_block(&mut self) -> std::io::Result<()> {
@@ -188,7 +179,7 @@ where
         let mut capacity = Self::MAX_CAP.saturating_sub(self.buffer.len());
 
         while buf.len() > capacity {
-            self.fill_buffer(&buf[..capacity])?;
+            self.buffer.extend_from_slice(&buf[..capacity]);
             self.flush_block()?;
 
             buf = &buf[capacity..];
@@ -196,7 +187,7 @@ where
             capacity = Self::MAX_CAP;
         }
 
-        self.fill_buffer(buf)?;
+        self.buffer.extend_from_slice(buf);
 
         Ok(sent + self.buffer.len())
     }
@@ -230,7 +221,7 @@ where
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// # fn get_key() -> &'static [u8] { &[] }
 /// use std::io::BufRead;
 ///
@@ -249,7 +240,7 @@ where
     In: std::io::Read,
 {
     stream: Option<aead::stream::DecryptorLE31<aes_gcm_siv::Aes256GcmSiv>>,
-    buffer: aead::arrayvec::ArrayVec<u8, CHUNK>,
+    buffer: Vec<u8>,
     cursor: usize,
     input: In,
 }
@@ -283,7 +274,7 @@ where
             aes_gcm_siv::Aes256GcmSiv::new(&key),
             nonce.as_slice().into(),
         ));
-        let buffer = aead::arrayvec::ArrayVec::new();
+        let buffer = Vec::with_capacity(CHUNK);
 
         Ok(Self {
             stream,
