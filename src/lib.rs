@@ -133,6 +133,9 @@
 ///
 /// Returns [`None`] if an error occurred.
 ///
+/// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
+/// It is assumed that all security precautions were taken with the `key` before calling this function.
+///
 /// # Example
 /// ```
 /// # fn get_key() -> &'static [u8] { &[] }
@@ -166,6 +169,9 @@ where
 /// Decrypts the payload with AES256 GCM SIV
 ///
 /// Returns [`None`] if an error occurred.
+///
+/// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
+/// It is assumed that all security precautions were taken with the `key` before calling this function.
 ///
 /// # Example
 /// ```

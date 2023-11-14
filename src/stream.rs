@@ -1,12 +1,85 @@
-#![allow(clippy::missing_errors_doc)]
+//! Stream support for AES-GCM-SIV 256-bits encrypting and decrypting in chunks.
+//!
+//! The chunks are counted as used when generating the nonce of the next chunk. Therefore, it is
+//! important that the [`Encrypter`] and [`Decrypter`] use the same chunk size.
+//!
+//! # Examples
+//!
+//! ## Encrypting
+//!
+//! ```
+//! # fn get_key() -> &'static [u8] { &[] }
+//! use std::io::{BufRead, Write};
+//!
+//! let key = get_key();
+//! let mut encrypter = crypter::stream::DefautEncrypter::new(key, std::io::stdout())
+//!     .expect("Failed to write to stdout");
+//! let reader = std::io::BufReader::new(std::io::stdin());
+//!
+//! for line in reader.lines() {
+//!     let line = line.expect("Failed to read from stdin");
+//!     encrypter
+//!         .write_all(line.as_bytes())
+//!         .expect("Failed to encrypt stream");
+//! }
+//! ```
+//!
+//! ## Decrypting
+//!
+//! ```
+//! # fn get_key() -> &'static [u8] { &[] }
+//! use std::io::BufRead;
+//!
+//! let key = get_key();
+//! let decrypter = crypter::stream::DefautDecrypter::new(key, std::io::stdin())
+//!     .expect("Failed to read from stdin");
+//! let reader = std::io::BufReader::new(decrypter);
+//!
+//! for line in reader.lines() {
+//!     let line = line.expect("Failed to read from stdin");
+//!     println!("{line}");
+//! }
+//! ```
 
+/// The default chunk size for encryption. That is, 128 KiB
 pub const DEFAULT_CHUNK: usize = 128 * 1024;
-pub type DefautEncryptor<Out> = Encryptor<Out, DEFAULT_CHUNK>;
-pub type DefautDecryptor<Out> = Decryptor<Out, DEFAULT_CHUNK>;
+/// Alias to an [`Encrypter`] using the [`DEFAULT_CHUNK`]
+pub type DefautEncrypter<Out> = Encrypter<Out, DEFAULT_CHUNK>;
+/// Alias to a [`Decrypter`] using the [`DEFAULT_CHUNK`]
+pub type DefautDecrypter<Out> = Decrypter<Out, DEFAULT_CHUNK>;
 
 const TAG_LEN: usize = std::mem::size_of::<aes_gcm_siv::Tag>();
 
-pub struct Encryptor<Out, const CHUNK: usize>
+/// A streaming AES-GCM-SIV 256-bits encrypter.
+///
+/// It uses the [`Write`](std::io::Write) trait to provide streaming, while internally keeping a
+/// buffer of `CHUNK` bytes in length to encrypt as a single message.
+///
+/// It will auto-finalize on drop, but will fail silently in that case. To get any errors that may
+/// happen while finalizing, explicitly call [`finish`](Encrypter::finish)
+///
+/// There is a buffer of `CHUNK` size bytes that is encrypted as a single message. This size should
+/// match the size used by a [`Decrypter`].
+///
+/// # Examples
+///
+/// ```
+/// # fn get_key() -> &'static [u8] { &[] }
+/// use std::io::{BufRead, Write};
+///
+/// let key = get_key();
+/// let mut encrypter = crypter::stream::DefautEncrypter::new(key, std::io::stdout())
+///     .expect("Failed to write to stdout");
+/// let reader = std::io::BufReader::new(std::io::stdin());
+///
+/// for line in reader.lines() {
+///     let line = line.expect("Failed to read from stdin");
+///     encrypter
+///         .write_all(line.as_bytes())
+///         .expect("Failed to encrypt stream");
+/// }
+/// ```
+pub struct Encrypter<Out, const CHUNK: usize>
 where
     Out: std::io::Write,
 {
@@ -15,12 +88,22 @@ where
     output: Out,
 }
 
-impl<Out, const CHUNK: usize> Encryptor<Out, CHUNK>
+impl<Out, const CHUNK: usize> Encrypter<Out, CHUNK>
 where
     Out: std::io::Write,
 {
     const MAX_CAP: usize = CHUNK - TAG_LEN;
 
+    /// Creates a new [`Encrypter`] using the writer `output` and chunk size `CHUNK`. The chunk
+    /// buffer will be kept on the stack.
+    ///
+    /// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
+    /// It is assumed that all security precautions were taken with the `key` before calling this function.
+    ///
+    /// # Errors
+    ///
+    /// When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
+    /// that stage, this function will fail.
     pub fn new<Key>(key: Key, mut output: Out) -> std::io::Result<Self>
     where
         Key: AsRef<[u8]>,
@@ -45,6 +128,15 @@ where
         })
     }
 
+    /// Finalizes the stream by encrypting any reamining bytes and setting the `last` flag,
+    /// flushing the output, and dropping this [`Encrypter`].
+    ///
+    /// This function will be called on [`drop()`](std::mem::drop) if not explicitly called.
+    /// Though, if called on [`drop()`](std::mem::drop), any errors will be ignored.
+    ///
+    /// # Errors
+    ///
+    /// The function may fail while encrypting any buffered bytes and flushing the encrypted message.
     pub fn finish(mut self) -> std::io::Result<()> {
         self.finish_inner()
     }
@@ -87,7 +179,7 @@ where
     }
 }
 
-impl<Out, const CHUNK: usize> std::io::Write for Encryptor<Out, CHUNK>
+impl<Out, const CHUNK: usize> std::io::Write for Encrypter<Out, CHUNK>
 where
     Out: std::io::Write,
 {
@@ -117,7 +209,7 @@ where
     }
 }
 
-impl<Out, const CHUNK: usize> Drop for Encryptor<Out, CHUNK>
+impl<Out, const CHUNK: usize> Drop for Encrypter<Out, CHUNK>
 where
     Out: std::io::Write,
 {
@@ -128,7 +220,31 @@ where
     }
 }
 
-pub struct Decryptor<In, const CHUNK: usize>
+/// A streaming AES-GCM-SIV 256-bits decrypter.
+///
+/// It uses the [`Read`](std::io::Read) trait to provide streaming, while internally keeping a
+/// buffer of `CHUNK` bytes in length to decrypt as a single message.
+///
+/// There is a buffer of `CHUNK` size bytes that is encrypted as a single message. This size should
+/// match the size used by a [`Encrypter`].
+///
+/// # Examples
+///
+/// ```
+/// # fn get_key() -> &'static [u8] { &[] }
+/// use std::io::BufRead;
+///
+/// let key = get_key();
+/// let decrypter = crypter::stream::DefautDecrypter::new(key, std::io::stdin())
+///     .expect("Failed to read from stdin");
+/// let reader = std::io::BufReader::new(decrypter);
+///
+/// for line in reader.lines() {
+///     let line = line.expect("Failed to read from stdin");
+///     println!("{line}");
+/// }
+/// ```
+pub struct Decrypter<In, const CHUNK: usize>
 where
     In: std::io::Read,
 {
@@ -138,10 +254,20 @@ where
     input: In,
 }
 
-impl<In, const CHUNK: usize> Decryptor<In, CHUNK>
+impl<In, const CHUNK: usize> Decrypter<In, CHUNK>
 where
     In: std::io::Read,
 {
+    /// Creates a new [`Decrypter`] using the reader `input` and chunk size `CHUNK`. The chunk
+    /// buffer will be kept on the stack.
+    ///
+    /// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
+    /// It is assumed that all security precautions were taken with the `key` before calling this function.
+    ///
+    /// # Errors
+    ///
+    /// When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
+    /// happens at that stage, this function will fail.
     pub fn new<Key>(key: Key, mut input: In) -> std::io::Result<Self>
     where
         Key: AsRef<[u8]>,
@@ -203,7 +329,7 @@ where
     }
 }
 
-impl<In, const CHUNK: usize> std::io::Read for Decryptor<In, CHUNK>
+impl<In, const CHUNK: usize> std::io::Read for Decrypter<In, CHUNK>
 where
     In: std::io::Read,
 {
@@ -259,13 +385,13 @@ mod tests {
         let mut transient = Vec::with_capacity(usize::from(u8::MAX) * usize::from(u8::MAX));
         let mut output = Vec::with_capacity(usize::from(u8::MAX) * usize::from(u8::MAX));
 
-        let mut encryptor = DefautEncryptor::new([], &mut transient).unwrap();
-        encryptor.write_all(input.as_slice()).unwrap();
-        encryptor.finish().unwrap();
+        let mut encrypter = DefautEncrypter::new([], &mut transient).unwrap();
+        encrypter.write_all(input.as_slice()).unwrap();
+        encrypter.finish().unwrap();
         assert_ne!(input, transient);
 
-        let mut decryptor = DefautDecryptor::new([], transient.as_slice()).unwrap();
-        decryptor.read_to_end(&mut output).unwrap();
+        let mut decrypter = DefautDecrypter::new([], transient.as_slice()).unwrap();
+        decrypter.read_to_end(&mut output).unwrap();
         assert_eq!(input, output);
     }
 
@@ -279,13 +405,13 @@ mod tests {
         let mut output = Vec::with_capacity(usize::from(u8::MAX) * usize::from(u8::MAX));
 
         {
-            let mut encryptor = DefautEncryptor::new([], &mut transient).unwrap();
-            encryptor.write_all(input.as_slice()).unwrap();
+            let mut encrypter = DefautEncrypter::new([], &mut transient).unwrap();
+            encrypter.write_all(input.as_slice()).unwrap();
         }
         assert_ne!(input, transient);
 
-        let mut decryptor = DefautDecryptor::new([], transient.as_slice()).unwrap();
-        decryptor.read_to_end(&mut output).unwrap();
+        let mut decrypter = DefautDecrypter::new([], transient.as_slice()).unwrap();
+        decrypter.read_to_end(&mut output).unwrap();
         assert_eq!(input, output);
     }
 
@@ -300,13 +426,13 @@ mod tests {
         let mut transient = Vec::with_capacity(usize::from(u8::MAX) * usize::from(u8::MAX));
         let mut output = Vec::with_capacity(usize::from(u8::MAX) * usize::from(u8::MAX));
 
-        let mut encryptor = DefautEncryptor::new([], &mut transient).unwrap();
-        encryptor.write_all(input.as_slice()).unwrap();
-        encryptor.finish().unwrap();
+        let mut encrypter = DefautEncrypter::new([], &mut transient).unwrap();
+        encrypter.write_all(input.as_slice()).unwrap();
+        encrypter.finish().unwrap();
         assert_ne!(input, transient);
 
-        let mut decryptor = Decryptor::<_, CHUNK>::new([], transient.as_slice()).unwrap();
-        let err = decryptor.read_to_end(&mut output).unwrap_err();
+        let mut decrypter = Decrypter::<_, CHUNK>::new([], transient.as_slice()).unwrap();
+        let err = decrypter.read_to_end(&mut output).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::Other);
         assert_eq!(err.to_string(), "aead::Error");
     }
