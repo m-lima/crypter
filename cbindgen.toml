@@ -3,5 +3,5 @@ pragma_once = true
 sys_includes = [ "stdint.h" ]
 no_includes = true
 
-[parse.expand]
-features = [ "ffi" ]
+[export]
+exclude = ["DEFAULT_CHUNK"]
