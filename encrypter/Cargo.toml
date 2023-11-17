@@ -9,7 +9,7 @@ lto = true
 codegen-units = 1
 
 [dependencies]
-base64 = "0.13.0"
-clap = { version = "3.0.10", features = [ "derive", "env" ] }
+base64 = "0.21.5"
+clap = { version = "4.4.8", features = ["derive", "env"] }
 crypter = { path = ".." }
-rpassword = "5.0.1"
+rpassword = "7.3.1"

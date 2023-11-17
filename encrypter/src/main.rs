@@ -7,20 +7,20 @@ use std::io::Write;
 struct Args {
     /// Print the output as raw bytes.
     /// By default, the output will be base64 encoded
-    #[clap(short, long)]
+    #[arg(short, long)]
     raw: bool,
 
     /// Decode the secret with base64
-    #[clap(short, long)]
+    #[arg(short, long)]
     base64_secret: bool,
 
     /// Secret to be used for encryption
-    #[clap(short, long, env = "ENCRYPTER_SECRET")]
+    #[arg(short, long, env = "ENCRYPTER_SECRET")]
     secret: Option<String>,
 
     /// Delimiter for joining the payload.
     /// Default value is \0
-    #[clap(short, long)]
+    #[arg(short, long)]
     delimiter: Option<String>,
 
     payload: Vec<String>,
@@ -44,11 +44,15 @@ fn fallible_main() -> Result<(), &'static str> {
 
     let secret = args
         .secret
-        .or_else(|| rpassword::prompt_password_stderr("Secret: ").ok())
+        .or_else(|| {
+            eprint!("Secret: ");
+            rpassword::read_password().ok()
+        })
         .ok_or("Missing secret")?;
 
     let secret = if args.base64_secret {
-        base64::decode(secret).map_err(|_| "Invalid base64 secret")?
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, secret)
+            .map_err(|_| "Invalid base64 secret")?
     } else {
         secret.into_bytes()
     };
@@ -64,7 +68,11 @@ fn fallible_main() -> Result<(), &'static str> {
     if args.raw {
         stdout.write_all(&encrypted)
     } else {
-        write!(stdout, "{}", base64::encode(encrypted))
+        write!(
+            stdout,
+            "{}",
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, encrypted)
+        )
     }
     .map_err(|_| "Failed to write to stdout")
 }
