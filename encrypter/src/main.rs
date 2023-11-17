@@ -1,5 +1,7 @@
 #![deny(warnings, clippy::pedantic, clippy::all, rust_2018_idioms)]
 
+use std::io::Write;
+
 #[derive(clap::Parser, Debug)]
 #[clap(name = "Encrypter", version)]
 struct Args {
@@ -24,41 +26,31 @@ struct Args {
     payload: Vec<String>,
 }
 
-fn main() {
-    use clap::Parser;
-    let args = Args::parse();
+fn main() -> std::process::ExitCode {
+    if let Err(err) = fallible_main() {
+        eprintln!("{err}");
+        std::process::ExitCode::FAILURE
+    } else {
+        std::process::ExitCode::SUCCESS
+    }
+}
+
+fn fallible_main() -> Result<(), &'static str> {
+    let args = <Args as clap::Parser>::parse();
 
     if args.payload.is_empty() {
-        eprintln!("Nothing to encrypt");
-        std::process::exit(-1);
+        return Err("Nothing to encrypt");
     }
 
-    let secret = match args.secret {
-        Some(secret) => {
-            if args.base64_secret {
-                base64::decode(secret).unwrap_or_else(|_| {
-                    eprintln!("Invalid base64 secret");
-                    std::process::exit(-1);
-                })
-            } else {
-                secret.into_bytes()
-            }
-        }
-        None => {
-            if let Ok(secret) = rpassword::prompt_password_stderr("Secret: ") {
-                if args.base64_secret {
-                    base64::decode(secret).unwrap_or_else(|_| {
-                        eprintln!("Invalid base64 secret");
-                        std::process::exit(-1);
-                    })
-                } else {
-                    secret.into_bytes()
-                }
-            } else {
-                eprintln!("Invalid secret");
-                std::process::exit(-2);
-            }
-        }
+    let secret = args
+        .secret
+        .or_else(|| rpassword::prompt_password_stderr("Secret: ").ok())
+        .ok_or("Missing secret")?;
+
+    let secret = if args.base64_secret {
+        base64::decode(secret).map_err(|_| "Invalid base64 secret")?
+    } else {
+        secret.into_bytes()
     };
 
     let payload = match args.delimiter {
@@ -66,18 +58,13 @@ fn main() {
         None => args.payload.join("\0"),
     };
 
-    let encrypted = crypter::encrypt(&secret, payload.as_bytes()).unwrap_or_else(|| {
-        eprintln!("Failed to encrypt");
-        std::process::exit(-3);
-    });
+    let encrypted = crypter::encrypt(secret, payload.as_bytes()).ok_or("Failed to encrypt")?;
 
+    let mut stdout = std::io::stdout().lock();
     if args.raw {
-        use std::io::Write;
-
-        let mut stdout = std::io::stdout();
-        std::mem::drop(stdout.write_all(&encrypted));
-        std::mem::drop(stdout.flush());
+        stdout.write_all(&encrypted)
     } else {
-        print!("{}", base64::encode(encrypted));
+        write!(stdout, "{}", base64::encode(encrypted))
     }
+    .map_err(|_| "Failed to write to stdout")
 }
