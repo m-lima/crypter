@@ -357,7 +357,6 @@ pub mod wasm {
 
     #[wasm_bindgen]
     #[must_use]
-    #[allow(clippy::option_if_let_else)]
     /// Decrypts the payload with AES256 GCM SIV
     ///
     /// A wrapper around [`decrypt`](../fn.decrypt.html)
