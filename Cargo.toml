@@ -1,24 +1,24 @@
 [package]
 name = "crypter"
 version = "0.2.1"
-authors = [ "Marcelo Lima <marcelowind@gmail.com>" ]
+authors = ["Marcelo Lima <marcelowind@gmail.com>"]
 edition = "2021"
 readme = "README.md"
 repository = "https://github.com/m-lima/crypter"
-keywords = [ "cryptography", "aes" ]
-categories = [ "cryptography" ]
+keywords = ["cryptography", "aes"]
+categories = ["cryptography"]
 description = "A AES-GCM 256 encryption and decryption library."
 license = "MIT"
 
 [lib]
 path = "src/lib.rs"
-crate-type = [ "cdylib", "lib" ]
+crate-type = ["cdylib", "lib"]
 
 [features]
 default = []
 ffi = []
-stream = [ "dep:aead" ]
-wasm = [ "dep:wasm-bindgen", "dep:js-sys", "dep:getrandom" ]
+stream = ["dep:aead"]
+wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:getrandom"]
 
 [dependencies]
 aead = { version = "0.5.2", features = ["stream"], optional = true }
