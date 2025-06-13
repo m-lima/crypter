@@ -171,7 +171,7 @@ where
                 .as_mut()
                 .unwrap_unchecked()
                 .encrypt_next_in_place(b"", &mut self.buffer)
-                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err.to_string()))?;
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
         }
 
         self.output.write_all(&self.buffer)?;
@@ -186,7 +186,7 @@ where
         if self.buffer.len() == self.plain_capacity {
             stream
                 .encrypt_next_in_place(b"", &mut self.buffer)
-                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err.to_string()))?;
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
 
             self.output.write_all(&self.buffer)?;
             self.buffer.clear();
@@ -194,7 +194,7 @@ where
 
         stream
             .encrypt_last_in_place(b"", &mut self.buffer)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err.to_string()))?;
+            .map_err(|err| std::io::Error::other(err.to_string()))?;
 
         self.output.write_all(&self.buffer)?;
         self.output.flush()
@@ -376,13 +376,13 @@ where
                 .take()
                 .unwrap_unchecked()
                 .decrypt_last_in_place(b"", &mut self.buffer)
-                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err.to_string()))?;
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
         } else {
             self.stream
                 .as_mut()
                 .unwrap_unchecked()
                 .decrypt_next_in_place(b"", &mut self.buffer)
-                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err.to_string()))?;
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
         }
         Ok(())
     }

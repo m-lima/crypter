@@ -36,6 +36,7 @@
         bindgen = ./ffi/include/crypter.h;
         readme = true;
       };
+      hack = true;
       packages =
         {
           system,
