@@ -20,6 +20,7 @@
 
   outputs =
     {
+      fenix,
       helper,
       ...
     }@inputs:
@@ -27,10 +28,67 @@
       allowFilesets = [
         ./README.md
         ./README.tpl
+        ./ffi/include/crypter.h
+        ./cbindgen.toml
       ];
       binary = false;
       checks = {
+        bindgen = ./ffi/include/crypter.h;
         readme = true;
       };
+      packages =
+        {
+          system,
+          pkgs,
+          lib,
+          craneLib,
+          prepareFeatures,
+          mainArgs,
+          cargoArtifacts,
+        }:
+        {
+          ffi = craneLib.buildPackage (
+            mainArgs
+            // {
+              inherit cargoArtifacts;
+              cargoExtraArgs = mainArgs.cargoExtraArgs + " --features ffi";
+              nativeBuildInputs = [ pkgs.rust-cbindgen ];
+              postInstall = ''
+                mkdir $out/include
+                cbindgen . > $out/include/crypter.h
+              '';
+            }
+          );
+          stream = craneLib.buildPackage (
+            mainArgs
+            // {
+              inherit cargoArtifacts;
+              cargoExtraArgs = mainArgs.cargoExtraArgs + " --features stream";
+            }
+          );
+          wasm =
+            let
+              fenixPkgs = fenix.packages.${system};
+            in
+            (craneLib.overrideToolchain (
+              fenixPkgs.combine [
+                fenixPkgs.stable.toolchain
+                fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
+              ]
+            )).buildPackage
+              (
+                mainArgs
+                // {
+                  inherit cargoArtifacts;
+                  cargoBuildCommand = "cargo build --target wasm32-unknown-unknown --lib";
+                  cargoExtraArgs = mainArgs.cargoExtraArgs + " --features wasm";
+                  nativeBuildInputs = [ pkgs.wasm-bindgen-cli ];
+                  postInstall = ''
+                    mkdir $out/pkg
+                    wasm-bindgen $out/lib/* --out-dir $out/pkg --web
+                  '';
+                }
+              );
+        };
     } ./. "crypter";
 }
