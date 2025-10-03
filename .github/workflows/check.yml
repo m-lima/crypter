@@ -1,15 +1,10 @@
 name: Check
-
 on:
   push:
     branches:
-      - '**'
+      - "**"
     tags-ignore:
       - v*
-
-env:
-  RUSTFLAGS: "-Dwarnings"
-
 jobs:
   check:
     name: Check
@@ -17,23 +12,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-      - name: Format
-        run: cargo fmt --all -- --check
-      - name: Install cargo-hack
-        run: cargo install cargo-hack
-      - name: Check main
-        run: cargo hack --feature-powerset check --verbose --workspace
-      - name: Check tests
-        run: cargo hack --feature-powerset check --verbose --workspace --tests
-      - name: Check examples
-        run: cargo hack --feature-powerset check --verbose --workspace --examples
-      - name: Lint main
-        run: cargo hack --feature-powerset clippy --verbose --workspace -- -W clippy::pedantic
-      - name: Lint tests
-        run: cargo hack --feature-powerset clippy --verbose --workspace --tests -- -W clippy::pedantic
-      - name: Lint examples
-        run: cargo hack --feature-powerset clippy --verbose --workspace --examples -- -W clippy::pedantic
-      - name: Test
-        run: cargo hack test --verbose --workspace --no-fail-fast
+      - name: Nixify
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check
+        run: nix flake check
