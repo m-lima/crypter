@@ -1,4 +1,4 @@
-#![deny(warnings, clippy::pedantic, clippy::all, rust_2018_idioms)]
+#![deny(warnings, clippy::pedantic)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 //! The crypter crate provides Rust and FFI for encryption and decryption using AES-GCM-SIV 256-bits.

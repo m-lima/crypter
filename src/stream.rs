@@ -436,7 +436,7 @@ mod tests {
     #[test]
     fn round_trip() {
         let input = (u8::MIN..=u8::MAX)
-            .flat_map(|_| (u8::MIN..u8::MAX))
+            .flat_map(|_| u8::MIN..u8::MAX)
             .collect::<Vec<_>>();
 
         let mut transient = Vec::with_capacity(input.len());
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn round_trip_with_drop() {
         let input = (u8::MIN..=u8::MAX)
-            .flat_map(|_| (u8::MIN..u8::MAX))
+            .flat_map(|_| u8::MIN..u8::MAX)
             .collect::<Vec<_>>();
 
         let mut transient = Vec::with_capacity(input.len());
@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn different_block_size() {
         let input = (u8::MIN..=u8::MAX)
-            .flat_map(|_| (u8::MIN..u8::MAX))
+            .flat_map(|_| u8::MIN..u8::MAX)
             .collect::<Vec<_>>();
 
         let mut transient = Vec::with_capacity(input.len());
@@ -498,7 +498,7 @@ mod tests {
             for chunk in chunk - 1..=chunk + 1 {
                 if let Err(err) = std::thread::spawn(move || {
                     let input = (u8::MIN..=u8::MAX)
-                        .flat_map(|_| (u8::MIN..u8::MAX))
+                        .flat_map(|_| u8::MIN..u8::MAX)
                         .collect::<Vec<_>>();
 
                     let mut transient = Vec::with_capacity(input.len());
