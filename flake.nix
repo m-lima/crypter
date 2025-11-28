@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     crane.url = "github:ipetkov/crane";
     fenix = {
       url = "github:nix-community/fenix";
@@ -20,76 +20,65 @@
 
   outputs =
     {
-      fenix,
+      flake-utils,
       helper,
       ...
     }@inputs:
-    helper.lib.rust.helper inputs {
-      allowFilesets = [
-        ./README.md
-        ./README.tpl
-        ./ffi/include/crypter.h
-        ./cbindgen.toml
-      ];
-      binary = false;
-      checks = {
-        bindgen = ./ffi/include/crypter.h;
-        readme = true;
-      };
-      hack = true;
-      packages =
-        {
-          system,
-          pkgs,
-          lib,
-          craneLib,
-          prepareFeatures,
-          mainArgs,
-          cargoArtifacts,
-        }:
-        {
-          ffi = craneLib.buildPackage (
-            mainArgs
-            // {
-              inherit cargoArtifacts;
-              cargoExtraArgs = mainArgs.cargoExtraArgs + " --features ffi";
-              nativeBuildInputs = [ pkgs.rust-cbindgen ];
-              postInstall = ''
-                mkdir $out/include
-                cbindgen . > $out/include/crypter.h
-              '';
-            }
-          );
-          stream = craneLib.buildPackage (
-            mainArgs
-            // {
-              inherit cargoArtifacts;
-              cargoExtraArgs = mainArgs.cargoExtraArgs + " --features stream";
-            }
-          );
-          wasm =
-            let
-              fenixPkgs = fenix.packages.${system};
-            in
-            (craneLib.overrideToolchain (
-              fenixPkgs.combine [
-                fenixPkgs.stable.toolchain
-                fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
-              ]
-            )).buildPackage
-              (
-                mainArgs
-                // {
-                  inherit cargoArtifacts;
-                  cargoBuildCommand = "cargo build --target wasm32-unknown-unknown --lib";
-                  cargoExtraArgs = mainArgs.cargoExtraArgs + " --features wasm";
-                  nativeBuildInputs = [ pkgs.wasm-bindgen-cli ];
-                  postInstall = ''
-                    mkdir $out/pkg
-                    wasm-bindgen $out/lib/* --out-dir $out/pkg --web
-                  '';
-                }
-              );
+    flake-utils.lib.eachDefaultSystem (
+      system:
+      let
+        options = {
+          binary = false;
+          hack = true;
+          readme = true;
+          bindgen = ./ffi/include/crypter.h;
         };
-    } ./. "crypter";
+        base = helper.lib.rust.helper inputs system ./. options;
+        ffi = helper.lib.rust.helper inputs system ./. (options // { features = [ "ffi" ]; });
+        stream = helper.lib.rust.helper inputs system ./. (options // { features = [ "stream" ]; });
+        # wasm = (
+        #   helper.lib.rust.helper inputs system ./. (
+        #     options
+        #     // {
+        #       monolithic = true;
+        #       toolchains = fenixPkgs: [
+        #         fenixPkgs.stable.toolchain
+        #         fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
+        #       ];
+        #       nativeBuildInputs = pkgs: [ pkgs.wasm-bindgen-cli ];
+        #       features = [ "wasm" ];
+        #       overrides = {
+        #         commonArgs = {
+        #           doCheck = false;
+        #           cargoBuildCommand = "cargo build --profile release --verbose --target wasm32-unknown-unknown";
+        #           CARGO_PROFILE = "release";
+        #           CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+        #           env = { };
+        #         };
+        #         mainArgs = {
+        #           postInstall = ''
+        #             mkdir $out/pkg
+        #             wasm-bindgen $out/lib/* --out-dir $out/pkg --web
+        #           '';
+        #         };
+        #       };
+        #     }
+        #   )
+        # );
+      in
+      base.outputs
+      // {
+        packages = {
+          default = base.outputs.packages.default;
+          ffi = ffi.outputs.packages.default;
+          stream = stream.outputs.packages.default;
+          # wasm = wasm.outputs.packages.default;
+        };
+
+        # devShells = {
+        #   default = base.outputs.devShells.default;
+        #   wasm = wasm.outputs.devShells.default;
+        # };
+      }
+    );
 }
