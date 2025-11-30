@@ -24,10 +24,10 @@ wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:getrandom"]
 aead = { version = "0.5.2", features = ["stream"], optional = true }
 aes-gcm-siv = "0.11.1"
 base64 = "0.22.1"
-getrandom = { version = "0.2.15", features = ["js"], optional = true }
-js-sys = { version = "0.3.70", optional = true }
+getrandom = { version = "0.3.4", features = ["wasm_js"], optional = true }
+js-sys = { version = "0.3.83", optional = true }
 sha2 = "0.10.8"
-wasm-bindgen = { version = "0.2.93", optional = true }
+wasm-bindgen = { version = "0.2.106", optional = true }
 
 [profile.release]
 lto = true
