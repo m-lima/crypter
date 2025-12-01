@@ -23,6 +23,7 @@ wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:getrandom"]
 [dependencies]
 aead = { version = "0.5.2", features = ["stream"], optional = true }
 aes-gcm-siv = "0.11.1"
+argon2 = "0.5.3"
 base64 = "0.22.1"
 getrandom = { version = "0.3.4", features = ["wasm_js"], optional = true }
 js-sys = { version = "0.3.83", optional = true }

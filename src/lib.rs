@@ -1,7 +1,7 @@
 #![deny(warnings, clippy::pedantic)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
-//! The crypter crate provides Rust and FFI for encryption and decryption using AES-GCM-SIV 256-bits.
+//! The crypter crate provides Rust and FFI easy encryption and decryption using AES-GCM-SIV 256-bits.
 //!
 //! To enable the C api, the feature `ffi` must be enabled.
 //! To enable the WASM api, the feature `wasm` must be enabled.
@@ -10,7 +10,7 @@
 //! # Examples
 //!
 //! ```
-//! # fn get_key() -> &'static [u8] { &[] }
+//! # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
 //! let key = get_key();
 //! let payload = "mega ultra safe payload";
 //!
@@ -118,7 +118,7 @@
 //!         const crypter = import('./crypter.js');
 //!         crypter.then(c => {
 //!           const encoder = new TextEncoder();
-//!           const key = encoder.encode('supersecret'); // Bad key. Just as an example
+//!           const key = encoder.encode('super_mega_ultra_secret_01234567'); // Bad key. Just as an example
 //!           const encrypted = c.encrypt(key, encoder.encode('mega ultra safe payload'));
 //!           const decrypted = c.decrypt(key, encrypted);
 //!           console.log('Encrypted: ', new TextDecoder().decode(decrypted));
@@ -129,16 +129,59 @@
 //! </html>
 //! ```
 
-/// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call
+const KEY_LEN: usize = <<aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::KeySizeUser>::KeySize as aes_gcm_siv::aead::generic_array::typenum::Unsigned>::USIZE;
+const TAG_LEN: usize = <<aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::AeadCore>::TagSize as aes_gcm_siv::aead::generic_array::typenum::Unsigned>::USIZE;
+const NONCE_LEN: usize = <<aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::AeadCore>::NonceSize as aes_gcm_siv::aead::generic_array::typenum::Unsigned>::USIZE;
+const SALT_LEN: usize = argon2::RECOMMENDED_SALT_LEN;
+
+fn derive_key<Key>(
+    key: Key,
+) -> Option<(
+    aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>,
+    [u8; argon2::RECOMMENDED_SALT_LEN],
+)>
+where
+    Key: AsRef<[u8]>,
+{
+    let key = key.as_ref();
+    let mut salt = [0; SALT_LEN];
+    aes_gcm_siv::aead::rand_core::RngCore::fill_bytes(&mut aes_gcm_siv::aead::OsRng, &mut salt);
+    let mut out = aes_gcm_siv::Key::<aes_gcm_siv::Aes256GcmSiv>::default();
+
+    argon2::Argon2::default()
+        .hash_password_into(key, &salt, &mut out)
+        .ok()?;
+
+    Some((out, salt))
+}
+
+fn encrypt_inner(
+    key: &aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>,
+    payload: &[u8],
+    buffer: &mut Vec<u8>,
+) -> bool {
+    use aes_gcm_siv::aead::AeadMutInPlace;
+    use aes_gcm_siv::aead::KeyInit;
+
+    let nonce = <aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::aead::AeadCore>::generate_nonce(
+        aes_gcm_siv::aead::rand_core::OsRng,
+    );
+    let mut cipher = aes_gcm_siv::Aes256GcmSiv::new(key);
+
+    buffer.extend_from_slice(payload);
+    cipher
+        .encrypt_in_place(&nonce, &[], buffer)
+        .map(|()| buffer.extend_from_slice(&nonce))
+        .is_ok()
+}
+
+/// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call.
 ///
 /// Returns [`None`] if an error occurred.
 ///
-/// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
-/// It is assumed that all security precautions were taken with the `key` before calling this function.
-///
 /// # Example
 /// ```
-/// # fn get_key() -> &'static [u8] { &[] }
+/// # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
 /// let key = get_key();
 /// let payload = "supersecretpayload";
 ///
@@ -147,35 +190,53 @@
 #[must_use]
 pub fn encrypt<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
 where
-    Key: AsRef<[u8]>,
+    Key: AsRef<[u8; KEY_LEN]>,
     Payload: AsRef<[u8]>,
 {
-    use aes_gcm_siv::aead::Aead;
-    use aes_gcm_siv::aead::KeyInit;
-
-    let key = key.as_ref();
+    let key = key.as_ref().into();
     let payload = payload.as_ref();
-
-    let nonce = nonce();
-    let key = normalize_key(key);
-    let cipher = aes_gcm_siv::Aes256GcmSiv::new(&key);
-
-    cipher.encrypt(&nonce, payload).ok().map(|mut v| {
-        v.extend(&nonce);
-        v
-    })
+    let mut buffer = Vec::with_capacity(payload.len() + TAG_LEN + NONCE_LEN);
+    (encrypt_inner(key, payload, &mut buffer)).then_some(buffer)
 }
 
-/// Decrypts the payload with AES256 GCM SIV
+/// Encrypts the payload with AES256 GCM SIV using a key derived from password with Argon2.
+/// The iv and the salt are randomly generated for each call.
 ///
 /// Returns [`None`] if an error occurred.
 ///
-/// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
-/// It is assumed that all security precautions were taken with the `key` before calling this function.
+/// # Example
+/// ```
+/// # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
+/// let key = get_key();
+/// let payload = "supersecretpayload";
+///
+/// let encrypted = crypter::encrypt(key, payload);
+/// ```
+#[must_use]
+pub fn encrypt_with_password<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
+where
+    Key: AsRef<[u8]>,
+    Payload: AsRef<[u8]>,
+{
+    let (key, salt) = derive_key(key)?;
+    let payload = payload.as_ref();
+
+    let mut buffer = Vec::with_capacity(payload.len() + TAG_LEN + NONCE_LEN + SALT_LEN);
+    if encrypt_inner(&key, payload, &mut buffer) {
+        buffer.extend_from_slice(&salt);
+        Some(buffer)
+    } else {
+        None
+    }
+}
+
+/// Decrypts the payload with AES256 GCM SIV.
+///
+/// Returns [`None`] if an error occurred.
 ///
 /// # Example
 /// ```
-/// # fn get_key() -> &'static [u8] { &[] }
+/// # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
 /// # fn get_encrypted_payload() -> &'static [u8] { &[] }
 /// let key = get_key();
 /// let payload = get_encrypted_payload();
@@ -185,6 +246,25 @@ where
 #[must_use]
 pub fn decrypt<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
 where
+    Key: AsRef<[u8; KEY_LEN]>,
+    Payload: AsRef<[u8]>,
+{
+    use aes_gcm_siv::aead::Aead;
+    use aes_gcm_siv::aead::KeyInit;
+
+    let key = key.as_ref().into();
+    let mut payload = payload.as_ref();
+
+    let nonce = payload
+        .split_off(payload.len() - NONCE_LEN..)
+        .map(aes_gcm_siv::Nonce::from_slice)?;
+    let cipher = aes_gcm_siv::Aes256GcmSiv::new(key);
+
+    cipher.decrypt(nonce, payload).ok()
+}
+
+pub fn decrypt_with_password<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
+where
     Key: AsRef<[u8]>,
     Payload: AsRef<[u8]>,
 {
@@ -192,31 +272,22 @@ where
     use aes_gcm_siv::aead::KeyInit;
 
     let key = key.as_ref();
-    let payload = payload.as_ref();
+    let mut payload = payload.as_ref();
 
-    let nonce = aes_gcm_siv::Nonce::from_slice(&payload[payload.len() - 12..]);
-    let key = normalize_key(key);
-    let cipher = aes_gcm_siv::Aes256GcmSiv::new(&key);
+    let salt = payload.split_off(payload.len() - SALT_LEN..)?;
 
-    cipher.decrypt(nonce, &payload[..payload.len() - 12]).ok()
-}
+    let nonce = payload
+        .split_off(payload.len() - NONCE_LEN..)
+        .map(aes_gcm_siv::Nonce::from_slice)?;
 
-/// Normalize the key into a 256 bit array
-///
-/// This is not a key derivation function, simply a convenience method to accept a &[u8] as input
-/// for the key and normalizing it into the expected length.
-fn normalize_key(key: &[u8]) -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> {
-    use sha2::Digest;
+    let mut out = [0; KEY_LEN];
+    argon2::Argon2::default()
+        .hash_password_into(key, salt, &mut out)
+        .ok()?;
 
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(key);
-    hasher.finalize()
-}
+    let cipher = aes_gcm_siv::Aes256GcmSiv::new(&out.into());
 
-fn nonce() -> aes_gcm_siv::Nonce {
-    let mut nonce = [0; 12];
-    aes_gcm_siv::aead::rand_core::RngCore::fill_bytes(&mut aes_gcm_siv::aead::OsRng, &mut nonce);
-    aes_gcm_siv::Nonce::from(nonce)
+    cipher.decrypt(nonce, payload).ok()
 }
 
 #[cfg(feature = "stream")]
@@ -305,7 +376,7 @@ pub mod ffi {
         }
     }
 
-    /// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call
+    /// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call.
     ///
     /// A wrapper around [`encrypt`](../fn.encrypt.html)
     ///
@@ -369,9 +440,13 @@ pub mod wasm {
 mod test {
     use super::*;
 
+    fn make_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> {
+        <aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::KeyInit>::generate_key(aes_gcm_siv::aead::OsRng)
+    }
+
     #[test]
     fn round_trip() {
-        let key = "secret_string";
+        let key = make_key();
         let payload = "super secret payload";
 
         let encrypted = encrypt(key, payload).unwrap();
@@ -384,7 +459,7 @@ mod test {
 
     #[test]
     fn corrupted_byte() {
-        let key = "secret_string";
+        let key = make_key();
         let payload = "super secret payload";
 
         let encrypted = encrypt(key, payload).unwrap();
