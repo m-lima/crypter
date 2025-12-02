@@ -70,7 +70,7 @@
         };
         wasmOptions = options // {
           toolchains = fenixPkgs: [
-            fenixPkgs.stable.toolchain
+            fenixPkgs.stable.defaultToolchain
             fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
           ];
           features = [ "wasm" ];
