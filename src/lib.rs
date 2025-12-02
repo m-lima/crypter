@@ -149,10 +149,10 @@ pub use argon::encrypt as encrypt_with_password;
 pub mod stream;
 
 #[cfg(feature = "ffi")]
-pub mod ffi;
+mod ffi;
 
 #[cfg(feature = "wasm")]
-pub mod wasm;
+mod wasm;
 
 mod sizes {
     use aes_gcm_siv::aead::generic_array::typenum::Unsigned;
@@ -177,7 +177,6 @@ mod sizes {
 ///
 /// let encrypted = crypter::encrypt(&key, payload);
 /// ```
-#[must_use]
 pub fn encrypt<'k, Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
 where
     Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
@@ -217,7 +216,6 @@ where
 ///
 /// let encrypted = crypter::decrypt(&key, payload);
 /// ```
-#[must_use]
 pub fn decrypt<'k, Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
 where
     Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,

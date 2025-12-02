@@ -45,7 +45,6 @@ pub struct CrypterRustSlice {
 }
 
 impl CrypterRustSlice {
-    #[must_use]
     pub fn null() -> Self {
         Self {
             ptr: std::ptr::null_mut(),
