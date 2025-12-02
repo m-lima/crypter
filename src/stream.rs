@@ -32,10 +32,10 @@
 //! ```
 //! # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
 //! # fn stdin() -> impl std::io::Read {
-//!     let mut bytes = Vec::new();
-//!     crypter::stream::Encrypter::new(&get_key(), &mut bytes).unwrap();
-//!     std::io::Cursor::new(bytes)
-//! }
+//! #     let mut bytes = Vec::new();
+//! #     crypter::stream::Encrypter::new(&get_key(), &mut bytes).unwrap();
+//! #     std::io::Cursor::new(bytes)
+//! # }
 //! use std::io::BufRead;
 //!
 //! let key = get_key();
@@ -337,10 +337,10 @@ where
 /// ```
 /// # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
 /// # fn stdin() -> impl std::io::Read {
-///     let mut bytes = Vec::new();
-///     crypter::stream::Encrypter::new(&get_key(), &mut bytes).unwrap();
-///     std::io::Cursor::new(bytes)
-/// }
+/// #     let mut bytes = Vec::new();
+/// #     crypter::stream::Encrypter::new(&get_key(), &mut bytes).unwrap();
+/// #     std::io::Cursor::new(bytes)
+/// # }
 /// use std::io::BufRead;
 ///
 /// let key = get_key();
