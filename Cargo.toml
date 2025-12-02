@@ -2,7 +2,7 @@
 name = "crypter"
 version = "0.2.1"
 authors = ["Marcelo Lima <marcelowind@gmail.com>"]
-edition = "2021"
+edition = "2024"
 readme = "README.md"
 repository = "https://github.com/m-lima/crypter"
 keywords = ["cryptography", "aes"]
@@ -16,6 +16,7 @@ crate-type = ["cdylib", "lib"]
 
 [features]
 default = []
+argon = ["dep:argon2"]
 ffi = []
 stream = ["dep:aead"]
 wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:getrandom"]
@@ -23,7 +24,7 @@ wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:getrandom"]
 [dependencies]
 aead = { version = "0.5.2", features = ["stream"], optional = true }
 aes-gcm-siv = "0.11.1"
-argon2 = "0.5.3"
+argon2 = { version = "0.5.3", optional = true }
 base64 = "0.22.1"
 getrandom = { version = "0.3.4", features = ["wasm_js"], optional = true }
 js-sys = { version = "0.3.83", optional = true }

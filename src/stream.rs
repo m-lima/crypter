@@ -8,14 +8,16 @@
 //!
 //! ## Encrypting
 //!
-//! ```no_run
-//! # fn get_key() -> &'static [u8] { &[] }
+//! ```
+//! # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
+//! # fn stdout() -> impl std::io::Write { Vec::<u8>::new() }
+//! # fn stdin() -> impl std::io::Read { std::io::Cursor::new(Vec::new()) }
 //! use std::io::{BufRead, Write};
 //!
 //! let key = get_key();
-//! let mut encrypter = crypter::stream::Encrypter::new(key, std::io::stdout())
+//! let mut encrypter = crypter::stream::Encrypter::new(&key, stdout())
 //!     .expect("Failed to write to stdout");
-//! let reader = std::io::BufReader::new(std::io::stdin());
+//! let reader = std::io::BufReader::new(stdin());
 //!
 //! for line in reader.lines() {
 //!     let line = line.expect("Failed to read from stdin");
@@ -27,12 +29,17 @@
 //!
 //! ## Decrypting
 //!
-//! ```no_run
-//! # fn get_key() -> &'static [u8] { &[] }
+//! ```
+//! # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
+//! # fn stdin() -> impl std::io::Read {
+//!     let mut bytes = Vec::new();
+//!     crypter::stream::Encrypter::new(&get_key(), &mut bytes).unwrap();
+//!     std::io::Cursor::new(bytes)
+//! }
 //! use std::io::BufRead;
 //!
 //! let key = get_key();
-//! let decrypter = crypter::stream::Decrypter::new(key, std::io::stdin())
+//! let decrypter = crypter::stream::Decrypter::new(&key, stdin())
 //!     .expect("Failed to read from stdin");
 //! let reader = std::io::BufReader::new(decrypter);
 //!
@@ -42,8 +49,16 @@
 //! }
 //! ```
 
-/// The default chunk size for encryption. That is, 512 KiB
+use crate::sizes;
+
+/// The default chunk size for encryption. That is, 512 KiB.
 pub const DEFAULT_CHUNK: usize = 512 * 1024;
+
+/// cbindgen:ignore
+type Nonce = aead::stream::Nonce<
+    aes_gcm_siv::Aes256GcmSiv,
+    aead::stream::StreamLE31<aes_gcm_siv::Aes256GcmSiv>,
+>;
 
 /// A streaming AES-GCM-SIV 256-bits encrypter.
 ///
@@ -51,21 +66,23 @@ pub const DEFAULT_CHUNK: usize = 512 * 1024;
 /// buffer of the chunk to encrypt as a single message.
 ///
 /// It will auto-finalize on drop, but will fail silently in that case. To get any errors that may
-/// happen while finalizing, explicitly call [`finish`](Encrypter::finish)
+/// happen while finalizing, explicitly call [`finish`](Encrypter::finish).
 ///
 /// **Note:** The size of the chunk used must match the chunk size used by the [`Decrypter`]. The decryption
 /// will fail if there is a mismatch.
 ///
 /// # Examples
 ///
-/// ```no_run
-/// # fn get_key() -> &'static [u8] { &[] }
+/// ```
+/// # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
+/// # fn stdout() -> impl std::io::Write { Vec::<u8>::new() }
+/// # fn stdin() -> impl std::io::Read { std::io::Cursor::new(Vec::new()) }
 /// use std::io::{BufRead, Write};
 ///
 /// let key = get_key();
-/// let mut encrypter = crypter::stream::Encrypter::new(key, std::io::stdout())
+/// let mut encrypter = crypter::stream::Encrypter::new(&key, stdout())
 ///     .expect("Failed to write to stdout");
-/// let reader = std::io::BufReader::new(std::io::stdin());
+/// let reader = std::io::BufReader::new(stdin());
 ///
 /// for line in reader.lines() {
 ///     let line = line.expect("Failed to read from stdin");
@@ -91,16 +108,13 @@ where
     /// Creates a new [`Encrypter`] using the writer `output` and a default chunk size [`DEFAULT_CHUNK`]
     /// encrypted with the cryptographic key `key`.
     ///
-    /// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
-    /// It is assumed that all security precautions were taken with the `key` before calling this function.
-    ///
     /// # Errors
     ///
     /// When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
     /// that stage, this function will fail.
-    pub fn new<Key>(key: Key, output: Out) -> std::io::Result<Self>
+    pub fn new<'k, Key>(key: Key, output: Out) -> std::io::Result<Self>
     where
-        Key: AsRef<[u8]>,
+        Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
     {
         Self::with_chunk(key, output, DEFAULT_CHUNK)
     }
@@ -108,36 +122,33 @@ where
     /// Creates a new [`Encrypter`] using the writer `output` and a chunk size `chunk` encrypted with
     /// the cryptographic key `key`.
     ///
-    /// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
-    /// It is assumed that all security precautions were taken with the `key` before calling this function.
-    ///
     /// # Errors
     ///
-    /// When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
-    /// that stage, this function will fail.
-    ///
-    /// # Panics
-    ///
-    /// If the value of `chunk` is less than 32.
-    pub fn with_chunk<Key>(key: Key, mut output: Out, chunk: usize) -> std::io::Result<Self>
+    /// * If the value of `chunk` is less than 32, a [`std::io::ErrorKind::InvalidInput`] is
+    ///   returned.
+    /// * When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
+    ///   that stage, this function will fail.
+    pub fn with_chunk<'k, Key>(key: Key, mut output: Out, chunk: usize) -> std::io::Result<Self>
     where
-        Key: AsRef<[u8]>,
+        Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
     {
         use aes_gcm_siv::aead::KeyInit;
 
-        assert!(chunk >= 32);
+        if chunk < 32 {
+            return Err(std::io::ErrorKind::InvalidInput.into());
+        }
 
-        let key = super::normalize_key(key.as_ref());
+        let key = key.into();
         let nonce = make_nonce();
 
         output.write_all(&nonce)?;
 
         let stream = Some(aead::stream::EncryptorLE31::from_aead(
-            aes_gcm_siv::Aes256GcmSiv::new(&key),
-            nonce.as_slice().into(),
+            aes_gcm_siv::Aes256GcmSiv::new(key),
+            &nonce,
         ));
         let buffer = Vec::with_capacity(chunk);
-        let plain_capacity = buffer.capacity() - std::mem::size_of::<aes_gcm_siv::Tag>();
+        let plain_capacity = buffer.capacity() - sizes::TAG_LEN;
 
         Ok(Self {
             stream,
@@ -205,7 +216,7 @@ where
     /// The capacity of `self.buffer` must accommodate `buf.len()`
     unsafe fn fill_buf(&mut self, buf: &[u8]) {
         let len = self.buffer.len();
-        self.buffer.set_len(len + buf.len());
+        unsafe { self.buffer.set_len(len + buf.len()) };
         self.buffer[len..].copy_from_slice(buf);
     }
 }
@@ -262,13 +273,18 @@ where
 ///
 /// # Examples
 ///
-/// ```no_run
-/// # fn get_key() -> &'static [u8] { &[] }
+/// ```
+/// # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
+/// # fn stdin() -> impl std::io::Read {
+///     let mut bytes = Vec::new();
+///     crypter::stream::Encrypter::new(&get_key(), &mut bytes).unwrap();
+///     std::io::Cursor::new(bytes)
+/// }
 /// use std::io::BufRead;
 ///
 /// let key = get_key();
-/// let decrypter = crypter::stream::Decrypter::new(key, std::io::stdin())
-///     .expect("Failed to read from stdin");
+/// let decrypter = crypter::stream::Decrypter::new(&key, stdin())
+///    .expect("Failed to read from stdin");
 /// let reader = std::io::BufReader::new(decrypter);
 ///
 /// for line in reader.lines() {
@@ -293,16 +309,13 @@ where
     /// Creates a new [`Decrypter`] using the reader `input` and a default size [`DEFAULT_CHUNK`] decrypted
     /// with the cryptographic key `key`.
     ///
-    /// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
-    /// It is assumed that all security precautions were taken with the `key` before calling this function.
-    ///
     /// # Errors
     ///
     /// When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
     /// happens at that stage, this function will fail.
-    pub fn new<Key>(key: Key, input: In) -> std::io::Result<Self>
+    pub fn new<'k, Key>(key: Key, input: In) -> std::io::Result<Self>
     where
-        Key: AsRef<[u8]>,
+        Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
     {
         Self::with_chunk(key, input, DEFAULT_CHUNK)
     }
@@ -310,32 +323,29 @@ where
     /// Creates a new [`Decrypter`] using the reader `input` and a chunk size `chunk` decrypted
     /// with the cryptographic key `key`.
     ///
-    /// **Note:** There is no derivation of the key. It is simply hashed to allow variable lenghts.
-    /// It is assumed that all security precautions were taken with the `key` before calling this function.
-    ///
     /// # Errors
     ///
-    /// When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
-    /// happens at that stage, this function will fail.
-    ///
-    /// # Panics
-    ///
-    /// If the value of `chunk` is less than 32.
-    pub fn with_chunk<Key>(key: Key, mut input: In, chunk: usize) -> std::io::Result<Self>
+    /// * If the value of `chunk` is less than 32, a [`std::io::ErrorKind::InvalidInput`] is
+    ///   returned.
+    /// * When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
+    ///   happens at that stage, this function will fail.
+    pub fn with_chunk<'k, Key>(key: Key, mut input: In, chunk: usize) -> std::io::Result<Self>
     where
-        Key: AsRef<[u8]>,
+        Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
     {
         use aead::KeyInit;
 
-        assert!(chunk >= 32);
+        if chunk < 32 {
+            return Err(std::io::ErrorKind::InvalidInput.into());
+        }
 
-        let key = super::normalize_key(key.as_ref());
+        let key = key.into();
 
-        let mut nonce = [0; 8];
+        let mut nonce = Nonce::default();
         input.read_exact(&mut nonce)?;
 
         let stream = Some(aead::stream::DecryptorLE31::from_aead(
-            aes_gcm_siv::Aes256GcmSiv::new(&key),
+            aes_gcm_siv::Aes256GcmSiv::new(key),
             nonce.as_slice().into(),
         ));
         let buffer = Vec::with_capacity(chunk);
@@ -371,18 +381,20 @@ where
     ///
     /// The presence of `self.stream` must be guaranteed
     unsafe fn decrypt(&mut self) -> std::io::Result<()> {
-        if self.buffer.len() < self.buffer.capacity() {
-            self.stream
-                .take()
-                .unwrap_unchecked()
-                .decrypt_last_in_place(b"", &mut self.buffer)
-                .map_err(|err| std::io::Error::other(err.to_string()))?;
-        } else {
-            self.stream
-                .as_mut()
-                .unwrap_unchecked()
-                .decrypt_next_in_place(b"", &mut self.buffer)
-                .map_err(|err| std::io::Error::other(err.to_string()))?;
+        unsafe {
+            if self.buffer.len() < self.buffer.capacity() {
+                self.stream
+                    .take()
+                    .unwrap_unchecked()
+                    .decrypt_last_in_place(b"", &mut self.buffer)
+                    .map_err(|err| std::io::Error::other(err.to_string()))?;
+            } else {
+                self.stream
+                    .as_mut()
+                    .unwrap_unchecked()
+                    .decrypt_next_in_place(b"", &mut self.buffer)
+                    .map_err(|err| std::io::Error::other(err.to_string()))?;
+            }
         }
         Ok(())
     }
@@ -417,8 +429,8 @@ where
     }
 }
 
-fn make_nonce() -> [u8; 8] {
-    let mut nonce = [0; 8];
+fn make_nonce() -> Nonce {
+    let mut nonce = Nonce::default();
     aes_gcm_siv::aead::rand_core::RngCore::fill_bytes(&mut aes_gcm_siv::aead::OsRng, &mut nonce);
     nonce
 }
@@ -428,13 +440,13 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
 
-    #[test]
-    fn tag_len() {
-        assert_eq!(std::mem::size_of::<aes_gcm_siv::Tag>(), 16);
+    fn make_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> {
+        <aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::KeyInit>::generate_key(aes_gcm_siv::aead::OsRng)
     }
 
     #[test]
     fn round_trip() {
+        let key = make_key();
         let input = (u8::MIN..=u8::MAX)
             .flat_map(|_| u8::MIN..u8::MAX)
             .collect::<Vec<_>>();
@@ -442,18 +454,19 @@ mod tests {
         let mut transient = Vec::with_capacity(input.len());
         let mut output = Vec::with_capacity(input.len());
 
-        let mut encrypter = Encrypter::new([], &mut transient).unwrap();
+        let mut encrypter = Encrypter::new(&key, &mut transient).unwrap();
         encrypter.write_all(input.as_slice()).unwrap();
         encrypter.finish().unwrap();
         assert_ne!(input, transient);
 
-        let mut decrypter = Decrypter::new([], transient.as_slice()).unwrap();
+        let mut decrypter = Decrypter::new(&key, transient.as_slice()).unwrap();
         decrypter.read_to_end(&mut output).unwrap();
         assert_eq!(input, output);
     }
 
     #[test]
     fn round_trip_with_drop() {
+        let key = make_key();
         let input = (u8::MIN..=u8::MAX)
             .flat_map(|_| u8::MIN..u8::MAX)
             .collect::<Vec<_>>();
@@ -462,18 +475,19 @@ mod tests {
         let mut output = Vec::with_capacity(input.len());
 
         {
-            let mut encrypter = Encrypter::new([], &mut transient).unwrap();
+            let mut encrypter = Encrypter::new(&key, &mut transient).unwrap();
             encrypter.write_all(input.as_slice()).unwrap();
         }
         assert_ne!(input, transient);
 
-        let mut decrypter = Decrypter::new([], transient.as_slice()).unwrap();
+        let mut decrypter = Decrypter::new(&key, transient.as_slice()).unwrap();
         decrypter.read_to_end(&mut output).unwrap();
         assert_eq!(input, output);
     }
 
     #[test]
     fn different_block_size() {
+        let key = make_key();
         let input = (u8::MIN..=u8::MAX)
             .flat_map(|_| u8::MIN..u8::MAX)
             .collect::<Vec<_>>();
@@ -481,12 +495,12 @@ mod tests {
         let mut transient = Vec::with_capacity(input.len());
         let mut output = Vec::with_capacity(input.len());
 
-        let mut encrypter = Encrypter::with_chunk([], &mut transient, 256).unwrap();
+        let mut encrypter = Encrypter::with_chunk(&key, &mut transient, 256).unwrap();
         encrypter.write_all(input.as_slice()).unwrap();
         encrypter.finish().unwrap();
         assert_ne!(input, transient);
 
-        let mut decrypter = Decrypter::with_chunk([], transient.as_slice(), 128).unwrap();
+        let mut decrypter = Decrypter::with_chunk(&key, transient.as_slice(), 128).unwrap();
         let err = decrypter.read_to_end(&mut output).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::Other);
         assert_eq!(err.to_string(), "aead::Error");
@@ -494,6 +508,7 @@ mod tests {
 
     #[test]
     fn variable_chunk() {
+        let key = make_key();
         for chunk in [64, 240, 256, 272, 512, 1024, 16 * 1024 * 1024] {
             for chunk in chunk - 1..=chunk + 1 {
                 if let Err(err) = std::thread::spawn(move || {
@@ -505,13 +520,13 @@ mod tests {
                     let mut output = Vec::with_capacity(input.len());
 
                     eprintln!("Chunk {chunk}");
-                    let mut encrypter = Encrypter::with_chunk([], &mut transient, chunk).unwrap();
+                    let mut encrypter = Encrypter::with_chunk(&key, &mut transient, chunk).unwrap();
                     encrypter.write_all(input.as_slice()).unwrap();
                     encrypter.finish().unwrap();
                     assert_ne!(input, transient);
 
                     let mut decrypter =
-                        Decrypter::with_chunk([], transient.as_slice(), chunk).unwrap();
+                        Decrypter::with_chunk(&key, transient.as_slice(), chunk).unwrap();
                     decrypter.read_to_end(&mut output).unwrap();
                     assert_eq!(input, output);
                 })
@@ -525,12 +540,10 @@ mod tests {
 
     #[test]
     fn minimum_chunk() {
+        let key = make_key();
         for chunk in 0..64 {
-            let result = std::thread::spawn(move || {
-                let mut buffer = Vec::new();
-                let _ = Encrypter::with_chunk([], &mut buffer, chunk).unwrap();
-            })
-            .join();
+            let mut buffer = Vec::new();
+            let result = Encrypter::with_chunk(&key, &mut buffer, chunk);
             if chunk < 32 {
                 assert!(result.is_err(), "Chunk {chunk}: Expected error");
             } else if let Err(err) = result {

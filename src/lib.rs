@@ -5,7 +5,8 @@
 //!
 //! To enable the C api, the feature `ffi` must be enabled.
 //! To enable the WASM api, the feature `wasm` must be enabled.
-//! See the [examples](../../blob/master/ffi/examples) for working FFI applications.
+//!
+//! See the [examples](https://github.com/m-lima/crypter/blob/master/ffi/examples) for working FFI applications.
 //!
 //! # Examples
 //!
@@ -14,34 +15,38 @@
 //! let key = get_key();
 //! let payload = "mega ultra safe payload";
 //!
-//! let encrypted = crypter::encrypt(key, payload).expect("Failed to encrypt");
-//! let decrypted = crypter::decrypt(key, encrypted).expect("Failed to decrypt");
+//! let encrypted = crypter::encrypt(&key, payload).expect("Failed to encrypt");
+//! let decrypted = crypter::decrypt(&key, encrypted).expect("Failed to decrypt");
 //! println!("{}", String::from_utf8(decrypted).expect("Invalid decrypted string"));
 //! ```
 //!
 //! # FFI examples
-//! ## C example: [example.c](../../blob/master/ffi/examples/c/example.c)
+//! ## C example: [example.c](https://github.com/m-lima/crypter/blob/master/ffi/examples/c/example.c)
 //! ```c
 //! #include <stdio.h>
 //! #include <string.h>
 //!
 //! #include <crypter.h>
 //!
-//! const char * get_key();
+//! CrypterKey get_key();
 //!
 //! int main() {
-//!   const char *key = get_key();
+//! #include <stdio.h>
+//!
+//! #include <crypter.h>
+//!
+//! int main() {
 //!   const char *payload = "mega ultra safe payload";
 //!
-//!   CrypterCSlice key_slice = {.ptr = (const unsigned char *)key, .len = strlen(key)};
+//!   CrypterKey key = get_key();
 //!
 //!   CrypterRustSlice encrypted = crypter_encrypt(
-//!       key_slice, (CrypterCSlice){.ptr = (const unsigned char *)payload,
-//!                                  .len = strlen(payload)});
+//!       &key, (CrypterCSlice){.ptr = (const unsigned char *)payload,
+//!                             .len = strlen(payload)});
 //!
 //!   CrypterCSlice encrypted_slice = {.ptr = encrypted.ptr, .len = encrypted.len};
 //!
-//!   CrypterRustSlice decrypted = crypter_decrypt(key_slice, encrypted_slice);
+//!   CrypterRustSlice decrypted = crypter_decrypt(&key, encrypted_slice);
 //!
 //!   if (decrypted.ptr) {
 //!     for (int i = 0; i < decrypted.len; i++) {
@@ -56,12 +61,12 @@
 //!     puts("Null return");
 //!   }
 //!
-//!   crypter_free_slice(encrypted);
-//!   crypter_free_slice(decrypted);
+//!   crypter_free_slice(&encrypted);
+//!   crypter_free_slice(&decrypted);
 //! }
 //! ```
 //!
-//! ## Lua example: [example.lua](../../blob/master/ffi/examples/lua/example.lua)
+//! ## Lua example: [example.lua](https://github.com/m-lima/crypter/blob/master/ffi/examples/lua/example.lua)
 //! ```lua
 //! local ffi = require('ffi')
 //!
@@ -102,7 +107,7 @@
 //! end
 //! ```
 //!
-//! ## WASM example: [index.html](../../blob/master/ffi/examples/wasm/index.html)
+//! ## WASM example: [index.html](https://github.com/m-lima/crypter/blob/master/ffi/examples/wasm/index.html)
 //! ```html
 //! <!DOCTYPE html>
 //! <html>
@@ -129,50 +134,31 @@
 //! </html>
 //! ```
 
-const KEY_LEN: usize = <<aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::KeySizeUser>::KeySize as aes_gcm_siv::aead::generic_array::typenum::Unsigned>::USIZE;
-const TAG_LEN: usize = <<aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::AeadCore>::TagSize as aes_gcm_siv::aead::generic_array::typenum::Unsigned>::USIZE;
-const NONCE_LEN: usize = <<aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::AeadCore>::NonceSize as aes_gcm_siv::aead::generic_array::typenum::Unsigned>::USIZE;
-const SALT_LEN: usize = argon2::RECOMMENDED_SALT_LEN;
+#[cfg(feature = "argon")]
+mod argon;
+#[cfg(feature = "argon")]
+pub use argon::decrypt as decrypt_with_password;
+#[cfg(feature = "argon")]
+pub use argon::encrypt as encrypt_with_password;
 
-fn derive_key<Key>(
-    key: Key,
-) -> Option<(
-    aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>,
-    [u8; argon2::RECOMMENDED_SALT_LEN],
-)>
-where
-    Key: AsRef<[u8]>,
-{
-    let key = key.as_ref();
-    let mut salt = [0; SALT_LEN];
-    aes_gcm_siv::aead::rand_core::RngCore::fill_bytes(&mut aes_gcm_siv::aead::OsRng, &mut salt);
-    let mut out = aes_gcm_siv::Key::<aes_gcm_siv::Aes256GcmSiv>::default();
+#[cfg(feature = "stream")]
+pub mod stream;
 
-    argon2::Argon2::default()
-        .hash_password_into(key, &salt, &mut out)
-        .ok()?;
+#[cfg(feature = "ffi")]
+pub mod ffi;
 
-    Some((out, salt))
-}
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
-fn encrypt_inner(
-    key: &aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>,
-    payload: &[u8],
-    buffer: &mut Vec<u8>,
-) -> bool {
-    use aes_gcm_siv::aead::AeadMutInPlace;
-    use aes_gcm_siv::aead::KeyInit;
+mod sizes {
+    use aes_gcm_siv::aead::generic_array::typenum::Unsigned;
+    use aes_gcm_siv::{AeadCore, Aes256GcmSiv};
 
-    let nonce = <aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::aead::AeadCore>::generate_nonce(
-        aes_gcm_siv::aead::rand_core::OsRng,
-    );
-    let mut cipher = aes_gcm_siv::Aes256GcmSiv::new(key);
+    pub(crate) const TAG_LEN: usize = <Aes256GcmSiv as AeadCore>::TagSize::USIZE;
+    pub(crate) const NONCE_LEN: usize = <Aes256GcmSiv as AeadCore>::NonceSize::USIZE;
 
-    buffer.extend_from_slice(payload);
-    cipher
-        .encrypt_in_place(&nonce, &[], buffer)
-        .map(|()| buffer.extend_from_slice(&nonce))
-        .is_ok()
+    #[cfg(feature = "argon")]
+    pub(crate) const SALT_LEN: usize = argon2::RECOMMENDED_SALT_LEN;
 }
 
 /// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call.
@@ -185,49 +171,33 @@ fn encrypt_inner(
 /// let key = get_key();
 /// let payload = "supersecretpayload";
 ///
-/// let encrypted = crypter::encrypt(key, payload);
+/// let encrypted = crypter::encrypt(&key, payload);
 /// ```
 #[must_use]
-pub fn encrypt<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
+pub fn encrypt<'k, Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
 where
-    Key: AsRef<[u8; KEY_LEN]>,
+    Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
     Payload: AsRef<[u8]>,
 {
-    let key = key.as_ref().into();
-    let payload = payload.as_ref();
-    let mut buffer = Vec::with_capacity(payload.len() + TAG_LEN + NONCE_LEN);
-    (encrypt_inner(key, payload, &mut buffer)).then_some(buffer)
-}
+    use aes_gcm_siv::aead::AeadMutInPlace;
+    use aes_gcm_siv::aead::KeyInit;
 
-/// Encrypts the payload with AES256 GCM SIV using a key derived from password with Argon2.
-/// The iv and the salt are randomly generated for each call.
-///
-/// Returns [`None`] if an error occurred.
-///
-/// # Example
-/// ```
-/// # fn get_key() -> aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv> { Default::default() }
-/// let key = get_key();
-/// let payload = "supersecretpayload";
-///
-/// let encrypted = crypter::encrypt(key, payload);
-/// ```
-#[must_use]
-pub fn encrypt_with_password<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
-where
-    Key: AsRef<[u8]>,
-    Payload: AsRef<[u8]>,
-{
-    let (key, salt) = derive_key(key)?;
+    let key = key.into();
     let payload = payload.as_ref();
 
-    let mut buffer = Vec::with_capacity(payload.len() + TAG_LEN + NONCE_LEN + SALT_LEN);
-    if encrypt_inner(&key, payload, &mut buffer) {
-        buffer.extend_from_slice(&salt);
-        Some(buffer)
-    } else {
-        None
-    }
+    let nonce = <aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::aead::AeadCore>::generate_nonce(
+        aes_gcm_siv::aead::rand_core::OsRng,
+    );
+    let mut cipher = aes_gcm_siv::Aes256GcmSiv::new(key);
+
+    let mut buffer = Vec::with_capacity(payload.len() + sizes::NONCE_LEN + sizes::TAG_LEN);
+    buffer.extend_from_slice(payload);
+    let tag = cipher
+        .encrypt_in_place_detached(&nonce, &nonce, &mut buffer)
+        .ok()?;
+    buffer.extend_from_slice(&nonce);
+    buffer.extend_from_slice(&tag);
+    Some(buffer)
 }
 
 /// Decrypts the payload with AES256 GCM SIV.
@@ -241,198 +211,37 @@ where
 /// let key = get_key();
 /// let payload = get_encrypted_payload();
 ///
-/// let encrypted = crypter::encrypt(key, payload);
+/// let encrypted = crypter::decrypt(&key, payload);
 /// ```
 #[must_use]
-pub fn decrypt<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
+pub fn decrypt<'k, Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
 where
-    Key: AsRef<[u8; KEY_LEN]>,
+    Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
     Payload: AsRef<[u8]>,
 {
-    use aes_gcm_siv::aead::Aead;
+    use aes_gcm_siv::aead::AeadInPlace;
     use aes_gcm_siv::aead::KeyInit;
 
-    let key = key.as_ref().into();
+    let key = key.into();
     let mut payload = payload.as_ref();
 
-    let nonce = payload
-        .split_off(payload.len() - NONCE_LEN..)
-        .map(aes_gcm_siv::Nonce::from_slice)?;
+    if payload.len() < sizes::TAG_LEN + sizes::NONCE_LEN {
+        return None;
+    }
+
+    let tag = aes_gcm_siv::Tag::from_slice(payload.split_off(payload.len() - sizes::TAG_LEN..)?);
+    let nonce =
+        aes_gcm_siv::Nonce::from_slice(payload.split_off(payload.len() - sizes::NONCE_LEN..)?);
+
     let cipher = aes_gcm_siv::Aes256GcmSiv::new(key);
-
-    cipher.decrypt(nonce, payload).ok()
-}
-
-pub fn decrypt_with_password<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
-where
-    Key: AsRef<[u8]>,
-    Payload: AsRef<[u8]>,
-{
-    use aes_gcm_siv::aead::Aead;
-    use aes_gcm_siv::aead::KeyInit;
-
-    let key = key.as_ref();
-    let mut payload = payload.as_ref();
-
-    let salt = payload.split_off(payload.len() - SALT_LEN..)?;
-
-    let nonce = payload
-        .split_off(payload.len() - NONCE_LEN..)
-        .map(aes_gcm_siv::Nonce::from_slice)?;
-
-    let mut out = [0; KEY_LEN];
-    argon2::Argon2::default()
-        .hash_password_into(key, salt, &mut out)
-        .ok()?;
-
-    let cipher = aes_gcm_siv::Aes256GcmSiv::new(&out.into());
-
-    cipher.decrypt(nonce, payload).ok()
-}
-
-#[cfg(feature = "stream")]
-pub mod stream;
-
-#[cfg(feature = "ffi")]
-pub mod ffi {
-    //! FFI bindings for `crypter`
-
-    macro_rules! try_slice {
-        ($slice:expr) => {
-            if let Some(slice) = Option::<&[u8]>::from($slice) {
-                slice
-            } else {
-                return CrypterRustSlice::null();
-            }
-        };
-    }
-
-    /// Represents a slice of bytes owned by the caller
-    #[repr(C)]
-    #[derive(Copy, Clone, Debug)]
-    pub struct CrypterCSlice<'a> {
-        ptr: *const u8,
-        len: usize,
-        _lifetime: std::marker::PhantomData<&'a ()>,
-    }
-
-    impl<'a> From<CrypterCSlice<'a>> for Option<&'a [u8]> {
-        fn from(slice: CrypterCSlice<'a>) -> Self {
-            if slice.ptr.is_null() {
-                None
-            } else {
-                Some(unsafe { std::slice::from_raw_parts(slice.ptr, slice.len) })
-            }
-        }
-    }
-
-    /// Represents a slice of bytes owned by Rust
-    ///
-    /// # Safety
-    ///
-    /// To free the memory [`crypter_free_slice`](fn.crypter_free_slice.html) must be called
-    #[repr(C)]
-    #[derive(Copy, Clone, Debug)]
-    pub struct CrypterRustSlice {
-        ptr: *mut u8,
-        len: usize,
-        capacity: usize,
-    }
-
-    impl CrypterRustSlice {
-        #[must_use]
-        pub fn null() -> Self {
-            Self {
-                ptr: std::ptr::null_mut(),
-                len: 0,
-                capacity: 0,
-            }
-        }
-    }
-
-    /// Frees the slice of bytes owned by Rust
-    ///
-    /// # Safety
-    ///
-    /// It may be unsafe to call `free()` on this slice as there is no guarantee of which allocator
-    /// was used
-    #[no_mangle]
-    pub extern "C" fn crypter_free_slice(slice: CrypterRustSlice) {
-        if !slice.ptr.is_null() {
-            drop(unsafe { Vec::from_raw_parts(slice.ptr, slice.len, slice.capacity) });
-        }
-    }
-
-    // TODO: Use Vec::into_raw_parts() when available
-    impl From<Vec<u8>> for CrypterRustSlice {
-        fn from(mut vec: Vec<u8>) -> Self {
-            let rust_slice = Self {
-                ptr: vec.as_mut_ptr(),
-                len: vec.len(),
-                capacity: vec.capacity(),
-            };
-            std::mem::forget(vec);
-            rust_slice
-        }
-    }
-
-    /// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call.
-    ///
-    /// A wrapper around [`encrypt`](../fn.encrypt.html)
-    ///
-    /// # Safety
-    ///
-    /// This method does not take ownership of the parameters
-    #[no_mangle]
-    pub extern "C" fn crypter_encrypt<'a>(
-        key: CrypterCSlice<'a>,
-        payload: CrypterCSlice<'a>,
-    ) -> CrypterRustSlice {
-        let key = try_slice!(key);
-        let payload = try_slice!(payload);
-        super::encrypt(key, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
-    }
-
-    /// Decrypts the payload with AES256 GCM SIV
-    ///
-    /// A wrapper around [`decrypt`](../fn.decrypt.html)
-    ///
-    /// # Safety
-    ///
-    /// This method does not take ownership of the parameters
-    #[no_mangle]
-    pub extern "C" fn crypter_decrypt<'a>(
-        key: CrypterCSlice<'a>,
-        payload: CrypterCSlice<'a>,
-    ) -> CrypterRustSlice {
-        let key = try_slice!(key);
-        let payload = try_slice!(payload);
-        super::decrypt(key, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
-    }
-}
-
-#[cfg(feature = "wasm")]
-pub mod wasm {
-    //! WASM bindings for `crypter`
-
-    use wasm_bindgen::prelude::*;
-
-    #[wasm_bindgen]
-    #[must_use]
-    /// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call
-    ///
-    /// A wrapper around [`encrypt`](../fn.encrypt.html)
-    pub fn encrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
-        super::encrypt(key, payload)
-    }
-
-    #[wasm_bindgen]
-    #[must_use]
-    /// Decrypts the payload with AES256 GCM SIV
-    ///
-    /// A wrapper around [`decrypt`](../fn.decrypt.html)
-    pub fn decrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
-        super::decrypt(key, payload)
+    let mut buffer = Vec::from(payload);
+    if cipher
+        .decrypt_in_place_detached(nonce, nonce, &mut buffer, tag)
+        .is_ok()
+    {
+        Some(buffer)
+    } else {
+        None
     }
 }
 
@@ -449,8 +258,8 @@ mod test {
         let key = make_key();
         let payload = "super secret payload";
 
-        let encrypted = encrypt(key, payload).unwrap();
-        let decrypted = decrypt(key, encrypted).unwrap();
+        let encrypted = encrypt(&key, payload).unwrap();
+        let decrypted = decrypt(&key, encrypted).unwrap();
 
         let recovered = String::from_utf8(decrypted).unwrap();
 
@@ -462,12 +271,12 @@ mod test {
         let key = make_key();
         let payload = "super secret payload";
 
-        let encrypted = encrypt(key, payload).unwrap();
+        let encrypted = encrypt(&key, payload).unwrap();
 
         for i in 0..encrypted.len() {
             let mut corrupted = encrypted.clone();
             corrupted[i] = !corrupted[i];
-            assert_eq!(decrypt(key, corrupted), None);
+            assert_eq!(decrypt(&key, corrupted), None);
         }
     }
 }

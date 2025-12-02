@@ -36,6 +36,17 @@
         base = helper.lib.rust.helper inputs system ./. options;
         ffi = helper.lib.rust.helper inputs system ./. (options // { features = [ "ffi" ]; });
         stream = helper.lib.rust.helper inputs system ./. (options // { features = [ "stream" ]; });
+        all = helper.lib.rust.helper inputs system ./. (
+          options
+          // {
+            features = [
+              "ffi"
+              "argon"
+              "wasm"
+              "stream"
+            ];
+          }
+        );
         # wasm = (
         #   helper.lib.rust.helper inputs system ./. (
         #     options
@@ -75,10 +86,10 @@
           # wasm = wasm.outputs.packages.default;
         };
 
-        # devShells = {
-        #   default = base.outputs.devShells.default;
-        #   wasm = wasm.outputs.devShells.default;
-        # };
+        devShells = {
+          default = all.outputs.devShells.default;
+          # wasm = wasm.outputs.devShells.default;
+        };
       }
     );
 }
