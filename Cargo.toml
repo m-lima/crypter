@@ -1,6 +1,6 @@
 [package]
 name = "crypter"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Marcelo Lima <marcelowind@gmail.com>"]
 edition = "2024"
 readme = "README.md"
