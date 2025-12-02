@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 #[must_use]
 /// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call
+/// The iv and the salt are randomly generated for each call.
 ///
 /// A wrapper around [`encrypt`](../fn.encrypt.html)
 pub fn encrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {

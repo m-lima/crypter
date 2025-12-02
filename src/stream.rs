@@ -120,12 +120,14 @@ where
     }
 
     /// Creates a new [`Encrypter`] using the writer `output` and a default chunk size [`DEFAULT_CHUNK`]
-    /// encrypted with the cryptographic key derived from `key` using Argon2.
+    /// encrypted with the cryptographic key derived from `password` using Argon2.
     ///
     /// # Errors
     ///
-    /// When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
-    /// that stage, this function will fail.
+    /// * If the key derivation fails, an [`InvalidData`](std::io::ErrorKind::InvalidData) is
+    ///   returned;
+    /// * When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
+    ///   that stage, this function will fail.
     #[cfg(feature = "argon")]
     pub fn new_with_password<Password>(password: Password, output: Out) -> std::io::Result<Self>
     where
@@ -139,7 +141,7 @@ where
     ///
     /// # Errors
     ///
-    /// * If the value of `chunk` is less than 32, a [`std::io::ErrorKind::InvalidInput`] is
+    /// * If the value of `chunk` is less than 32, an [`InvalidInput`](std::io::ErrorKind::InvalidInput) is
     ///   returned.
     /// * When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
     ///   that stage, this function will fail.
@@ -174,12 +176,14 @@ where
     }
 
     /// Creates a new [`Encrypter`] using the writer `output` and a chunk size `chunk` encrypted with
-    /// the cryptographic key derived from `key` using Argon2.
+    /// the cryptographic key derived from `password` using Argon2.
     ///
     /// # Errors
     ///
-    /// * If the value of `chunk` is less than 32, a [`std::io::ErrorKind::InvalidInput`] is
+    /// * If the value of `chunk` is less than 32, an [`InvalidInput`](std::io::ErrorKind::InvalidInput) is
     ///   returned.
+    /// * If the key derivation fails, an [`InvalidData`](std::io::ErrorKind::InvalidData) is
+    ///   returned;
     /// * When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
     ///   that stage, this function will fail.
     #[cfg(feature = "argon")]
@@ -382,12 +386,14 @@ where
     }
 
     /// Creates a new [`Decrypter`] using the reader `input` and a default size [`DEFAULT_CHUNK`] decrypted
-    /// with the cryptographic key derived from `key` using Argon2.
+    /// with the cryptographic key derived from `password` using Argon2.
     ///
     /// # Errors
     ///
-    /// When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
-    /// happens at that stage, this function will fail.
+    /// * If the key derivation fails, an [`InvalidData`](std::io::ErrorKind::InvalidData) is
+    ///   returned;
+    /// * When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
+    ///   happens at that stage, this function will fail.
     #[cfg(feature = "argon")]
     pub fn new_with_password<Password>(password: Password, input: In) -> std::io::Result<Self>
     where
@@ -401,7 +407,7 @@ where
     ///
     /// # Errors
     ///
-    /// * If the value of `chunk` is less than 32, a [`std::io::ErrorKind::InvalidInput`] is
+    /// * If the value of `chunk` is less than 32, an [`InvalidInput`](std::io::ErrorKind::InvalidInput) is
     ///   returned.
     /// * When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
     ///   happens at that stage, this function will fail.
@@ -435,12 +441,14 @@ where
     }
 
     /// Creates a new [`Decrypter`] using the reader `input` and a chunk size `chunk` decrypted
-    /// with the cryptographic key derived from `key` using Argon2.
+    /// with the cryptographic key derived from `password` using Argon2.
     ///
     /// # Errors
     ///
-    /// * If the value of `chunk` is less than 32, a [`std::io::ErrorKind::InvalidInput`] is
+    /// * If the value of `chunk` is less than 32, an [`InvalidInput`](std::io::ErrorKind::InvalidInput) is
     ///   returned.
+    /// * If the key derivation fails, an [`InvalidData`](std::io::ErrorKind::InvalidData) is
+    ///   returned;
     /// * When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
     ///   happens at that stage, this function will fail.
     #[cfg(feature = "argon")]
@@ -590,7 +598,7 @@ mod tests {
     #[test]
     #[cfg(feature = "argon")]
     fn round_trip_with_password() {
-        let password = b"super secret password";
+        let password = "super secret password";
         let input = (u8::MIN..=u8::MAX)
             .flat_map(|_| u8::MIN..u8::MAX)
             .collect::<Vec<_>>();

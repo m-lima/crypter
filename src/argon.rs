@@ -3,7 +3,7 @@
 //! # Examples
 //!
 //! ```
-//! let password = b"super secret password";
+//! let password = "super secret password";
 //! let payload = "mega ultra safe payload";
 //!
 //! let encrypted = crypter::encrypt_with_password(password, payload).expect("Failed to encrypt");
@@ -58,7 +58,7 @@ where
 ///
 /// # Example
 /// ```
-/// let password = b"super secret password";
+/// let password = "super secret password";
 /// let payload = "supersecretpayload";
 ///
 /// let encrypted = crypter::encrypt_with_password(password, payload);
@@ -101,7 +101,7 @@ where
 /// # Example
 /// ```
 /// # fn get_encrypted_payload() -> &'static [u8] { &[] }
-/// let password = b"super secret password";
+/// let password = "super secret password";
 /// let payload = get_encrypted_payload();
 ///
 /// let encrypted = crypter::decrypt_with_password(password, payload);
