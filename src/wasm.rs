@@ -8,6 +8,9 @@ use wasm_bindgen::prelude::*;
 ///
 /// A wrapper around [`encrypt`](../fn.encrypt.html)
 pub fn encrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
+    if key.len() != 32 {
+        return None;
+    }
     super::encrypt(key, payload)
 }
 
@@ -17,5 +20,8 @@ pub fn encrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
 ///
 /// A wrapper around [`decrypt`](../fn.decrypt.html)
 pub fn decrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
+    if key.len() != 32 {
+        return None;
+    }
     super::decrypt(key, payload)
 }

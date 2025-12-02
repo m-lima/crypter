@@ -12,10 +12,10 @@
         const crypter = import('./crypter.js')
         crypter.then(c => {
           const encoder = new TextEncoder();
-          const pass = encoder.encode('supersecret');
-          const encrypted = c.encrypt(pass, encoder.encode('mega ultra safe payload'));
-          const decrypted = c.decrypt(pass, encrypted);
-          console.log('Encrypted: ', new TextDecoder().decode(decrypted));
+          const key = encoder.encode('super_mega_ultra_secret_01234567');
+          const encrypted = c.encrypt(key, encoder.encode('mega ultra safe payload'));
+          const decrypted = c.decrypt(key, encrypted);
+          console.log('Encrypted:', new TextDecoder().decode(decrypted));
         });
       });
     </script>

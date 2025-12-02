@@ -20,6 +20,7 @@
 
   outputs =
     {
+      nixpkgs,
       flake-utils,
       helper,
       ...
@@ -27,21 +28,85 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
+        pkgs = nixpkgs.legacyPackages.${system};
+        bindgen = pkgs.buildWasmBindgenCli rec {
+          src = pkgs.fetchCrate {
+            pname = "wasm-bindgen-cli";
+            version = "0.2.106";
+            hash = "sha256-M6WuGl7EruNopHZbqBpucu4RWz44/MSdv6f0zkYw+44=";
+          };
+
+          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+            inherit src;
+            inherit (src) pname version;
+            hash = "sha256-ElDatyOwdKwHg3bNH/1pcxKI7LXkhsotlDPQjiLHBwA=";
+          };
+        };
         options = {
-          toolchains = fenixPkgs: [
-            fenixPkgs.stable.toolchain
-            fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
-          ];
           binary = false;
           hack = true;
           readme = true;
           bindgen = ./ffi/include/crypter.h;
         };
+        wasmOptions = options // {
+          toolchains = fenixPkgs: [
+            fenixPkgs.stable.toolchain
+            fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
+          ];
+          features = [ "wasm" ];
+          nativeBuildInputs = pkgs: [ bindgen ];
+        };
         base = helper.lib.rust.helper inputs system ./. options;
         ffi = helper.lib.rust.helper inputs system ./. (options // { features = [ "ffi" ]; });
         stream = helper.lib.rust.helper inputs system ./. (options // { features = [ "stream" ]; });
+        wasmBase = helper.lib.rust.helper inputs system ./. (
+          wasmOptions
+          // {
+            overrides = {
+              commonArgs = {
+                doCheck = false;
+                CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+              };
+            };
+          }
+        );
+        wasm =
+          let
+            name = "${wasmBase.mainArtifact.pname}";
+            version = "${wasmBase.mainArtifact.version}";
+          in
+          wasmBase.craneLib.mkCargoDerivation (
+            wasmBase.mainArgs
+            // {
+              cargoArtifacts = wasmBase.mainArtifact;
+              buildPhaseCargoCommand = "wasm-bindgen target/lib/${name}.wasm --out-dir pkg --typescript --target bundler";
+              installPhaseCommand = ''
+                mkdir -p $out
+                cp -r pkg $out/pkg
+                cat > $out/pkg/package.json <<EOF
+                {
+                  "name": "${name}",
+                  "type": "module",
+                  "version": "${version}",
+                  "files": [
+                    "${name}_bg.wasm",
+                    "${name}.js",
+                    "${name}_bg.js",
+                    "${name}.d.ts"
+                  ],
+                  "main": "${name}.js",
+                  "types": "${name}.d.ts",
+                  "sideEffects": [
+                    "./${name}.js",
+                    "./snippets/*"
+                  ]
+                }
+                EOF
+              '';
+            }
+          );
         all = helper.lib.rust.helper inputs system ./. (
-          options
+          wasmOptions
           // {
             features = [
               "ffi"
@@ -51,48 +116,18 @@
             ];
           }
         );
-        # wasm = (
-        #   helper.lib.rust.helper inputs system ./. (
-        #     options
-        #     // {
-        #       monolithic = true;
-        #       toolchains = fenixPkgs: [
-        #         fenixPkgs.stable.toolchain
-        #         fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
-        #       ];
-        #       nativeBuildInputs = pkgs: [ pkgs.wasm-bindgen-cli ];
-        #       features = [ "wasm" ];
-        #       overrides = {
-        #         commonArgs = {
-        #           doCheck = false;
-        #           cargoBuildCommand = "cargo build --profile release --verbose --target wasm32-unknown-unknown";
-        #           CARGO_PROFILE = "release";
-        #           CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-        #           env = { };
-        #         };
-        #         mainArgs = {
-        #           postInstall = ''
-        #             mkdir $out/pkg
-        #             wasm-bindgen $out/lib/* --out-dir $out/pkg --web
-        #           '';
-        #         };
-        #       };
-        #     }
-        #   )
-        # );
       in
       base.outputs
       // {
         packages = {
+          inherit wasm;
           default = base.outputs.packages.default;
           ffi = ffi.outputs.packages.default;
           stream = stream.outputs.packages.default;
-          # wasm = wasm.outputs.packages.default;
         };
 
         devShells = {
           default = all.outputs.devShells.default;
-          # wasm = wasm.outputs.devShells.default;
         };
       }
     );
