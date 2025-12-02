@@ -70,34 +70,30 @@
 //! ```lua
 //! local ffi = require('ffi')
 //!
-//! ffi.cdef[[
-//!   typedef struct Slice { uint8_t * ptr; size_t len; } Slice;
-//!   typedef struct RustSlice { uint8_t * ptr; size_t len; size_t capacity; } RustSlice;
+//! ffi.cdef [[
+//!   typedef uint8_t Key[32];
+//!   typedef struct Slice { const uint8_t *ptr; uintptr_t len; } Slice;
+//!   typedef struct RustSlice { const uint8_t *ptr; uintptr_t len; uintptr_t cap; } RustSlice;
 //!
-//!   RustSlice crypter_encrypt(struct Slice key, struct Slice payload);
-//!   RustSlice crypter_decrypt(struct Slice key, struct Slice payload);
+//!   RustSlice crypter_encrypt(const Key *key, struct Slice payload);
+//!   RustSlice crypter_decrypt(const Key *key, struct Slice payload);
+//!   void crypter_free_slice(struct RustSlice *slice);
 //! ]]
 //!
 //! local function slice_from_str(text)
-//!   local slice = ffi.new('Slice')
-//!
-//!   slice.ptr = ffi.cast('uint8_t *', text)
-//!   slice.len = string.len(text)
-//!   return slice
+//!   return ffi.new('Slice', { ptr = ffi.cast('uint8_t *', text), len = #text })
 //! end
 //!
 //! local function relax_rust_slice(rust_slice)
-//!   local slice = ffi.new('Slice')
-//!
-//!   slice.ptr = rust_slice.ptr
-//!   slice.len = rust_slice.len
-//!   return slice
+//!   return ffi.new('Slice', { ptr = rust_slice.ptr, len = rust_slice.len })
 //! end
 //!
 //! crypter = ffi.load('crypter')
 //!
 //! local key = require('my_key_getter').get_key()
-//! local encrypted = crypter.crypter_encrypt(key, slice_from_str('mega ultra safe payload'))
+//! local payload = 'mega ultra safe payload'
+//! local payload_slice = slice_from_str(payload)
+//! local encrypted = crypter.crypter_encrypt(key, payload_slice)
 //! local decrypted = crypter.crypter_decrypt(key, relax_rust_slice(encrypted))
 //!
 //! if decrypted.ptr ~= nil then
@@ -105,6 +101,9 @@
 //! else
 //!   print('Failed roud trip')
 //! end
+//!
+//! crypter.crypter_free_slice(encrypted)
+//! crypter.crypter_free_slice(decrypted)
 //! ```
 //!
 //! ## WASM example: [index.html](https://github.com/m-lima/crypter/blob/master/ffi/examples/wasm/index.html)

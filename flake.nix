@@ -28,6 +28,10 @@
       system:
       let
         options = {
+          toolchains = fenixPkgs: [
+            fenixPkgs.stable.toolchain
+            fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
+          ];
           binary = false;
           hack = true;
           readme = true;

@@ -15,7 +15,7 @@ $(WASM_BG): $(WASM)
 	wasm-bindgen $(WASM) --out-dir $(PWD)/web --web
 
 $(WASM):
-	cargo build --target wasm32-unknown-unknown --release --lib
+	cargo build --features wasm --target wasm32-unknown-unknown --release --lib
 
 clean:
 	rm -rf $(PWD)/web $(PWD)/../../../target/wasm32-unknown-unknown
