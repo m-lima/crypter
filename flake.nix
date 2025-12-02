@@ -47,6 +47,26 @@
           hack = true;
           readme = true;
           bindgen = ./ffi/include/crypter.h;
+          formatters = {
+            clang-format.enable = true;
+            djlint = {
+              enable = true;
+              indent = 2;
+            };
+            stylua = {
+              enable = true;
+              settings = {
+                indent_type = "Spaces";
+                indent_width = 2;
+                quote_style = "AutoPreferSingle";
+              };
+            };
+            xmllint.enable = true;
+          };
+          fmtExcludes = [
+            "**/Makefile"
+            "ffi/include/crypter.h"
+          ];
         };
         wasmOptions = options // {
           toolchains = fenixPkgs: [
@@ -59,26 +79,26 @@
         base = helper.lib.rust.helper inputs system ./. options;
         ffi = helper.lib.rust.helper inputs system ./. (options // { features = [ "ffi" ]; });
         stream = helper.lib.rust.helper inputs system ./. (options // { features = [ "stream" ]; });
-        wasmBase = helper.lib.rust.helper inputs system ./. (
-          wasmOptions
-          // {
-            overrides = {
-              commonArgs = {
-                doCheck = false;
-                CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-              };
-            };
-          }
-        );
         wasm =
           let
-            name = "${wasmBase.mainArtifact.pname}";
-            version = "${wasmBase.mainArtifact.version}";
+            wasm = helper.lib.rust.helper inputs system ./. (
+              wasmOptions
+              // {
+                overrides = {
+                  commonArgs = {
+                    doCheck = false;
+                    CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+                  };
+                };
+              }
+            );
+            name = "${wasm.mainArtifact.pname}";
+            version = "${wasm.mainArtifact.version}";
           in
-          wasmBase.craneLib.mkCargoDerivation (
-            wasmBase.mainArgs
+          wasm.craneLib.mkCargoDerivation (
+            wasm.mainArgs
             // {
-              cargoArtifacts = wasmBase.mainArtifact;
+              cargoArtifacts = wasm.mainArtifact;
               buildPhaseCargoCommand = "wasm-bindgen target/lib/${name}.wasm --out-dir pkg --typescript --target bundler";
               installPhaseCommand = ''
                 mkdir -p $out
@@ -117,17 +137,13 @@
           }
         );
       in
-      base.outputs
+      all.outputs
       // {
         packages = {
           inherit wasm;
           default = base.outputs.packages.default;
           ffi = ffi.outputs.packages.default;
           stream = stream.outputs.packages.default;
-        };
-
-        devShells = {
-          default = all.outputs.devShells.default;
         };
       }
     );

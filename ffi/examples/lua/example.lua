@@ -1,6 +1,6 @@
 local ffi = require('ffi')
 
-ffi.cdef [[
+ffi.cdef([[
   typedef uint8_t Key[32];
   typedef struct Slice { const uint8_t *ptr; uintptr_t len; } Slice;
   typedef struct RustSlice { const uint8_t *ptr; uintptr_t len; uintptr_t cap; } RustSlice;
@@ -8,7 +8,7 @@ ffi.cdef [[
   RustSlice crypter_encrypt(const Key *key, struct Slice payload);
   RustSlice crypter_decrypt(const Key *key, struct Slice payload);
   void crypter_free_slice(struct RustSlice *slice);
-]]
+]])
 
 local function slice_from_str(text)
   return ffi.new('Slice', { ptr = ffi.cast('uint8_t *', text), len = #text })
@@ -21,7 +21,7 @@ end
 -- Adapt this to your OS dynamic library format
 local crypter = ffi.load('../../../target/release/libcrypter.so')
 
-local key = ffi.cast("const uint8_t (*)[32]", "0123456789abcdef0123456789abcdef")
+local key = ffi.cast('const uint8_t (*)[32]', '0123456789abcdef0123456789abcdef')
 local payload = 'mega ultra safe payload'
 local payload_slice = slice_from_str(payload)
 local encrypted = crypter.crypter_encrypt(key, payload_slice)
