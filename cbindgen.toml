@@ -5,3 +5,6 @@ no_includes = true
 
 [export]
 exclude = ["DEFAULT_CHUNK"]
+
+[defines]
+"feature = argon" = "CRYTER_ARGON"

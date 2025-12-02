@@ -119,6 +119,21 @@ where
         Self::with_chunk(key, output, DEFAULT_CHUNK)
     }
 
+    /// Creates a new [`Encrypter`] using the writer `output` and a default chunk size [`DEFAULT_CHUNK`]
+    /// encrypted with the cryptographic key derived from `key` using Argon2.
+    ///
+    /// # Errors
+    ///
+    /// When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
+    /// that stage, this function will fail.
+    #[cfg(feature = "argon")]
+    pub fn new_with_password<Password>(password: Password, output: Out) -> std::io::Result<Self>
+    where
+        Password: AsRef<[u8]>,
+    {
+        Self::with_chunk_and_password(password, output, DEFAULT_CHUNK)
+    }
+
     /// Creates a new [`Encrypter`] using the writer `output` and a chunk size `chunk` encrypted with
     /// the cryptographic key `key`.
     ///
@@ -145,6 +160,52 @@ where
 
         let stream = Some(aead::stream::EncryptorLE31::from_aead(
             aes_gcm_siv::Aes256GcmSiv::new(key),
+            &nonce,
+        ));
+        let buffer = Vec::with_capacity(chunk);
+        let plain_capacity = buffer.capacity() - sizes::TAG_LEN;
+
+        Ok(Self {
+            stream,
+            buffer,
+            output,
+            plain_capacity,
+        })
+    }
+
+    /// Creates a new [`Encrypter`] using the writer `output` and a chunk size `chunk` encrypted with
+    /// the cryptographic key derived from `key` using Argon2.
+    ///
+    /// # Errors
+    ///
+    /// * If the value of `chunk` is less than 32, a [`std::io::ErrorKind::InvalidInput`] is
+    ///   returned.
+    /// * When initializing, the [`Encrypter`] will write a few bytes to `output`. If any error happens at
+    ///   that stage, this function will fail.
+    #[cfg(feature = "argon")]
+    pub fn with_chunk_and_password<Password>(
+        password: Password,
+        mut output: Out,
+        chunk: usize,
+    ) -> std::io::Result<Self>
+    where
+        Password: AsRef<[u8]>,
+    {
+        use aes_gcm_siv::aead::KeyInit;
+
+        if chunk < 32 {
+            return Err(std::io::ErrorKind::InvalidInput.into());
+        }
+
+        let (key, salt) =
+            crate::argon::derive_key(password).ok_or(std::io::ErrorKind::InvalidInput)?;
+        output.write_all(&salt)?;
+
+        let nonce = make_nonce();
+        output.write_all(&nonce)?;
+
+        let stream = Some(aead::stream::EncryptorLE31::from_aead(
+            aes_gcm_siv::Aes256GcmSiv::new(&key),
             &nonce,
         ));
         let buffer = Vec::with_capacity(chunk);
@@ -320,6 +381,21 @@ where
         Self::with_chunk(key, input, DEFAULT_CHUNK)
     }
 
+    /// Creates a new [`Decrypter`] using the reader `input` and a default size [`DEFAULT_CHUNK`] decrypted
+    /// with the cryptographic key derived from `key` using Argon2.
+    ///
+    /// # Errors
+    ///
+    /// When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
+    /// happens at that stage, this function will fail.
+    #[cfg(feature = "argon")]
+    pub fn new_with_password<Password>(password: Password, input: In) -> std::io::Result<Self>
+    where
+        Password: AsRef<[u8]>,
+    {
+        Self::with_chunk_with_password(password, input, DEFAULT_CHUNK)
+    }
+
     /// Creates a new [`Decrypter`] using the reader `input` and a chunk size `chunk` decrypted
     /// with the cryptographic key `key`.
     ///
@@ -346,6 +422,53 @@ where
 
         let stream = Some(aead::stream::DecryptorLE31::from_aead(
             aes_gcm_siv::Aes256GcmSiv::new(key),
+            nonce.as_slice().into(),
+        ));
+        let buffer = Vec::with_capacity(chunk);
+
+        Ok(Self {
+            stream,
+            buffer,
+            cursor: 0,
+            input,
+        })
+    }
+
+    /// Creates a new [`Decrypter`] using the reader `input` and a chunk size `chunk` decrypted
+    /// with the cryptographic key derived from `key` using Argon2.
+    ///
+    /// # Errors
+    ///
+    /// * If the value of `chunk` is less than 32, a [`std::io::ErrorKind::InvalidInput`] is
+    ///   returned.
+    /// * When initializing, the [`Decrypter`] will read the first few bytes of `input`. If any error
+    ///   happens at that stage, this function will fail.
+    #[cfg(feature = "argon")]
+    pub fn with_chunk_with_password<Password>(
+        password: Password,
+        mut input: In,
+        chunk: usize,
+    ) -> std::io::Result<Self>
+    where
+        Password: AsRef<[u8]>,
+    {
+        use aead::KeyInit;
+
+        if chunk < 32 {
+            return Err(std::io::ErrorKind::InvalidInput.into());
+        }
+
+        let mut salt = crate::argon::Salt::default();
+        input.read_exact(&mut salt)?;
+
+        let key = crate::argon::derive_with_salt(password, &salt)
+            .ok_or(std::io::ErrorKind::InvalidData)?;
+
+        let mut nonce = Nonce::default();
+        input.read_exact(&mut nonce)?;
+
+        let stream = Some(aead::stream::DecryptorLE31::from_aead(
+            aes_gcm_siv::Aes256GcmSiv::new(&key),
             nonce.as_slice().into(),
         ));
         let buffer = Vec::with_capacity(chunk);
@@ -460,6 +583,27 @@ mod tests {
         assert_ne!(input, transient);
 
         let mut decrypter = Decrypter::new(&key, transient.as_slice()).unwrap();
+        decrypter.read_to_end(&mut output).unwrap();
+        assert_eq!(input, output);
+    }
+
+    #[test]
+    #[cfg(feature = "argon")]
+    fn round_trip_with_password() {
+        let password = b"super secret password";
+        let input = (u8::MIN..=u8::MAX)
+            .flat_map(|_| u8::MIN..u8::MAX)
+            .collect::<Vec<_>>();
+
+        let mut transient = Vec::with_capacity(input.len());
+        let mut output = Vec::with_capacity(input.len());
+
+        let mut encrypter = Encrypter::new_with_password(password, &mut transient).unwrap();
+        encrypter.write_all(input.as_slice()).unwrap();
+        encrypter.finish().unwrap();
+        assert_ne!(input, transient);
+
+        let mut decrypter = Decrypter::new_with_password(password, transient.as_slice()).unwrap();
         decrypter.read_to_end(&mut output).unwrap();
         assert_eq!(input, output);
     }

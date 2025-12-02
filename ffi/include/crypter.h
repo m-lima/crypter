@@ -49,6 +49,21 @@ void crypter_free_slice(struct CrypterRustSlice *self);
  */
 struct CrypterRustSlice crypter_encrypt(const CrypterKey *key, struct CrypterCSlice payload);
 
+#if defined(CRYTER_ARGON)
+/**
+ * Encrypts the payload with AES256 GCM SIV using a key derived from password with Argon2.
+ * The iv and the salt are randomly generated for each call.
+ *
+ * A wrapper around [`encrypt_with_password`](../fn.encrypt_with_password.html)
+ *
+ * # Safety
+ *
+ * This method does not take ownership of the parameters.
+ */
+struct CrypterRustSlice crypter_encrypt_with_password(struct CrypterCSlice password,
+                                                      struct CrypterCSlice payload);
+#endif
+
 /**
  * Decrypts the payload with AES256 GCM SIV.
  *
@@ -59,3 +74,17 @@ struct CrypterRustSlice crypter_encrypt(const CrypterKey *key, struct CrypterCSl
  * This method does not take ownership of the parameters.
  */
 struct CrypterRustSlice crypter_decrypt(const CrypterKey *key, struct CrypterCSlice payload);
+
+#if defined(CRYTER_ARGON)
+/**
+ * Decrypts the payload with AES256 GCM SIV using a key derived from password with Argon2.
+ *
+ * A wrapper around [`decrypt_with_password`](../fn.decrypt_with_password.html)
+ *
+ * # Safety
+ *
+ * This method does not take ownership of the parameters.
+ */
+struct CrypterRustSlice crypter_decrypt_with_password(struct CrypterCSlice password,
+                                                      struct CrypterCSlice payload);
+#endif

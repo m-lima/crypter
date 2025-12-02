@@ -3,35 +3,52 @@
 //! # Examples
 //!
 //! ```
-//! let key = b"super secret key";
+//! let password = b"super secret password";
 //! let payload = "mega ultra safe payload";
 //!
-//! let encrypted = crypter::encrypt_with_password(key, payload).expect("Failed to encrypt");
-//! let decrypted = crypter::decrypt_with_password(key, encrypted).expect("Failed to decrypt");
+//! let encrypted = crypter::encrypt_with_password(password, payload).expect("Failed to encrypt");
+//! let decrypted = crypter::decrypt_with_password(password, encrypted).expect("Failed to decrypt");
 //! println!("{}", String::from_utf8(decrypted).expect("Invalid decrypted string"));
 //! ```
 
 use crate::sizes;
 
-fn derive_key<Key>(
-    key: Key,
-) -> Option<(
-    aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>,
-    [u8; sizes::SALT_LEN],
-)>
+pub(crate) type Salt = [u8; sizes::SALT_LEN];
+
+pub(crate) fn derive_key<Password>(
+    password: Password,
+) -> Option<(aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>, Salt)>
 where
-    Key: AsRef<[u8]>,
+    Password: AsRef<[u8]>,
 {
-    let key = key.as_ref();
+    let password = password.as_ref();
     let mut salt = [0; sizes::SALT_LEN];
     aes_gcm_siv::aead::rand_core::RngCore::fill_bytes(&mut aes_gcm_siv::aead::OsRng, &mut salt);
     let mut out = aes_gcm_siv::Key::<aes_gcm_siv::Aes256GcmSiv>::default();
 
     argon2::Argon2::default()
-        .hash_password_into(key, &salt, &mut out)
+        .hash_password_into(password, &salt, &mut out)
         .ok()?;
 
     Some((out, salt))
+}
+
+pub(crate) fn derive_with_salt<Password>(
+    password: Password,
+    salt: &Salt,
+) -> Option<aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>
+where
+    Password: AsRef<[u8]>,
+    Salt: AsRef<[u8]>,
+{
+    let password = password.as_ref();
+
+    let mut out = aes_gcm_siv::Key::<aes_gcm_siv::Aes256GcmSiv>::default();
+    argon2::Argon2::default()
+        .hash_password_into(password, salt, &mut out)
+        .ok()?;
+
+    Some(out)
 }
 
 /// Encrypts the payload with AES256 GCM SIV using a key derived from password with Argon2.
@@ -41,20 +58,20 @@ where
 ///
 /// # Example
 /// ```
-/// let key = b"super secret key";
+/// let password = b"super secret password";
 /// let payload = "supersecretpayload";
 ///
-/// let encrypted = crypter::encrypt_with_password(key, payload);
+/// let encrypted = crypter::encrypt_with_password(password, payload);
 /// ```
-pub fn encrypt<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
+pub fn encrypt<Password, Payload>(password: Password, payload: Payload) -> Option<Vec<u8>>
 where
-    Key: AsRef<[u8]>,
+    Password: AsRef<[u8]>,
     Payload: AsRef<[u8]>,
 {
     use aes_gcm_siv::aead::AeadMutInPlace;
     use aes_gcm_siv::aead::KeyInit;
 
-    let (key, salt) = derive_key(key)?;
+    let (key, salt) = derive_key(password)?;
     let payload = payload.as_ref();
 
     let nonce = <aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::aead::AeadCore>::generate_nonce(
@@ -84,20 +101,19 @@ where
 /// # Example
 /// ```
 /// # fn get_encrypted_payload() -> &'static [u8] { &[] }
-/// let key = b"super secret key";
+/// let password = b"super secret password";
 /// let payload = get_encrypted_payload();
 ///
-/// let encrypted = crypter::decrypt_with_password(key, payload);
+/// let encrypted = crypter::decrypt_with_password(password, payload);
 /// ```
-pub fn decrypt<Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
+pub fn decrypt<Password, Payload>(password: Password, payload: Payload) -> Option<Vec<u8>>
 where
-    Key: AsRef<[u8]>,
+    Password: AsRef<[u8]>,
     Payload: AsRef<[u8]>,
 {
     use aes_gcm_siv::aead::AeadInPlace;
     use aes_gcm_siv::aead::KeyInit;
 
-    let key = key.as_ref();
     let mut payload = payload.as_ref();
 
     if payload.len() < sizes::TAG_LEN + sizes::NONCE_LEN + sizes::SALT_LEN {
@@ -106,17 +122,11 @@ where
 
     let tag = aes_gcm_siv::Tag::from_slice(payload.split_off(payload.len() - sizes::TAG_LEN..)?);
     let aad = payload.split_off(payload.len() - sizes::SALT_LEN - sizes::NONCE_LEN..)?;
-    // Safety: Checked just above that the size matches
-    let (salt, nonce) = unsafe { aad.split_at_unchecked(sizes::SALT_LEN) };
-    let nonce = aes_gcm_siv::Nonce::from_slice(nonce);
+    let mut salt = Salt::default();
+    salt.copy_from_slice(&aad[..sizes::SALT_LEN]);
+    let nonce = aes_gcm_siv::Nonce::from_slice(&aad[sizes::SALT_LEN..]);
 
-    let key = {
-        let mut out = aes_gcm_siv::Key::<aes_gcm_siv::Aes256GcmSiv>::default();
-        argon2::Argon2::default()
-            .hash_password_into(key, salt, &mut out)
-            .ok()?;
-        out
-    };
+    let key = derive_with_salt(password, &salt)?;
 
     let cipher = aes_gcm_siv::Aes256GcmSiv::new(&key);
     let mut buffer = Vec::from(payload);
@@ -137,11 +147,11 @@ mod tests {
 
     #[test]
     fn round_trip() {
-        let key = "super_secret_key";
+        let password = "super_secret_password";
         let payload = "super secret payload";
 
-        let encrypted = encrypt(key, payload).unwrap();
-        let decrypted = decrypt(key, encrypted).unwrap();
+        let encrypted = encrypt(password, payload).unwrap();
+        let decrypted = decrypt(password, encrypted).unwrap();
 
         let recovered = String::from_utf8(decrypted).unwrap();
 

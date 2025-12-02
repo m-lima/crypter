@@ -97,6 +97,26 @@ pub extern "C" fn crypter_encrypt(key: &CrypterKey, payload: CrypterCSlice) -> C
     super::encrypt(key, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
 }
 
+/// Encrypts the payload with AES256 GCM SIV using a key derived from password with Argon2.
+/// The iv and the salt are randomly generated for each call.
+///
+/// A wrapper around [`encrypt_with_password`](../fn.encrypt_with_password.html)
+///
+/// # Safety
+///
+/// This method does not take ownership of the parameters.
+#[cfg(feature = "argon")]
+#[unsafe(no_mangle)]
+pub extern "C" fn crypter_encrypt_with_password(
+    password: CrypterCSlice,
+    payload: CrypterCSlice,
+) -> CrypterRustSlice {
+    let password = try_slice!(password);
+    let payload = try_slice!(payload);
+    super::encrypt_with_password(password, payload)
+        .map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
+}
+
 /// Decrypts the payload with AES256 GCM SIV.
 ///
 /// A wrapper around [`decrypt`](../fn.decrypt.html).
@@ -108,6 +128,25 @@ pub extern "C" fn crypter_encrypt(key: &CrypterKey, payload: CrypterCSlice) -> C
 pub extern "C" fn crypter_decrypt(key: &CrypterKey, payload: CrypterCSlice) -> CrypterRustSlice {
     let payload = try_slice!(payload);
     super::decrypt(key, payload).map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
+}
+
+/// Decrypts the payload with AES256 GCM SIV using a key derived from password with Argon2.
+///
+/// A wrapper around [`decrypt_with_password`](../fn.decrypt_with_password.html)
+///
+/// # Safety
+///
+/// This method does not take ownership of the parameters.
+#[cfg(feature = "argon")]
+#[unsafe(no_mangle)]
+pub extern "C" fn crypter_decrypt_with_password(
+    password: CrypterCSlice,
+    payload: CrypterCSlice,
+) -> CrypterRustSlice {
+    let password = try_slice!(password);
+    let payload = try_slice!(payload);
+    super::decrypt_with_password(password, payload)
+        .map_or_else(CrypterRustSlice::null, CrypterRustSlice::from)
 }
 
 #[cfg(test)]

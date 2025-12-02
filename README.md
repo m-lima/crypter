@@ -9,6 +9,7 @@ The crypter crate provides Rust and FFI easy encryption and decryption using AES
 
 To enable the C api, the feature `ffi` must be enabled.
 To enable the WASM api, the feature `wasm` must be enabled.
+To enable key derivation from password, the feature `argon` must be enabled.
 
 See the [examples](https://github.com/m-lima/crypter/blob/master/ffi/examples) for working FFI applications.
 
