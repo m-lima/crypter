@@ -1,10 +1,9 @@
 TARGET = example
 OBJ = example.o
 
-RPATH = $(PWD)/../../../target/release
+LIBPATH = $(PWD)/../../../target/release
 CFLAGS = -I../../include
-LDFLAGS = -L$(RPATH) -Wl,-rpath,$(RPATH)
-LIBS = -lcrypter
+LDFLAGS = -L$(LIBPATH) -Wl,-Bstatic -lcrypter -Wl,-Bdynamic
 
 .PHONY: all clean
 
@@ -12,7 +11,7 @@ all: $(TARGET)
 
 $(TARGET): $(OBJ) $(LIB)
 	cargo build --release --lib --features ffi
-	$(CC) -o $(TARGET) $(OBJ) $(LDFLAGS) $(LIBS)
+	$(CC) -o $(TARGET) $(OBJ) $(LDFLAGS)
 
 clean:
 	rm -rf $(TARGET) $(OBJ)

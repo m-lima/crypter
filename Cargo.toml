@@ -12,7 +12,7 @@ license = "MIT"
 
 [lib]
 path = "src/lib.rs"
-crate-type = ["cdylib", "lib"]
+crate-type = ["cdylib", "lib", "staticlib"]
 
 [features]
 default = []
