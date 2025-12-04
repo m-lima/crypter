@@ -68,30 +68,11 @@ where
     Password: AsRef<[u8]>,
     Payload: AsRef<[u8]>,
 {
-    use aes_gcm_siv::aead::AeadMutInPlace;
-    use aes_gcm_siv::aead::KeyInit;
-
     let (key, salt) = derive_key(password)?;
-    let payload = payload.as_ref();
-
-    let nonce = <aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::aead::AeadCore>::generate_nonce(
-        aes_gcm_siv::aead::rand_core::OsRng,
-    );
-    let mut cipher = aes_gcm_siv::Aes256GcmSiv::new(&key);
-
-    let mut aad = [0; sizes::SALT_LEN + sizes::NONCE_LEN];
-    aad[..sizes::SALT_LEN].copy_from_slice(&salt);
-    aad[sizes::SALT_LEN..].copy_from_slice(&nonce);
-
-    let mut buffer =
-        Vec::with_capacity(payload.len() + sizes::SALT_LEN + sizes::NONCE_LEN + sizes::TAG_LEN);
-    buffer.extend_from_slice(payload);
-    let tag = cipher
-        .encrypt_in_place_detached(&nonce, &aad, &mut buffer)
-        .ok()?;
-    buffer.extend_from_slice(&aad);
-    buffer.extend_from_slice(&tag);
-    Some(buffer)
+    super::encrypt_inner(&key, payload, sizes::SALT_LEN).map(|mut e| {
+        e.extend_from_slice(&salt);
+        e
+    })
 }
 
 /// Decrypts the payload with AES256 GCM SIV using a key derived from password with Argon2.
@@ -111,34 +92,20 @@ where
     Password: AsRef<[u8]>,
     Payload: AsRef<[u8]>,
 {
-    use aes_gcm_siv::aead::AeadInPlace;
-    use aes_gcm_siv::aead::KeyInit;
-
     let mut payload = payload.as_ref();
 
-    if payload.len() < sizes::TAG_LEN + sizes::NONCE_LEN + sizes::SALT_LEN {
+    if payload.len() < sizes::SALT_LEN {
         return None;
     }
 
-    let tag = aes_gcm_siv::Tag::from_slice(payload.split_off(payload.len() - sizes::TAG_LEN..)?);
-    let aad = payload.split_off(payload.len() - sizes::SALT_LEN - sizes::NONCE_LEN..)?;
-    let mut salt = Salt::default();
-    salt.copy_from_slice(&aad[..sizes::SALT_LEN]);
-    let nonce = aes_gcm_siv::Nonce::from_slice(&aad[sizes::SALT_LEN..]);
+    let key = {
+        let buffer = payload.split_off(payload.len() - sizes::SALT_LEN..)?;
+        let mut salt = Salt::default();
+        salt.copy_from_slice(buffer);
+        derive_with_salt(password.as_ref(), &salt)?
+    };
 
-    let key = derive_with_salt(password, &salt)?;
-
-    let cipher = aes_gcm_siv::Aes256GcmSiv::new(&key);
-    let mut buffer = Vec::from(payload);
-
-    if cipher
-        .decrypt_in_place_detached(nonce, aad, &mut buffer, tag)
-        .is_ok()
-    {
-        Some(buffer)
-    } else {
-        None
-    }
+    super::decrypt_inner(&key, payload)
 }
 
 #[cfg(test)]

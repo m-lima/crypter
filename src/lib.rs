@@ -182,25 +182,7 @@ where
     Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
     Payload: AsRef<[u8]>,
 {
-    use aes_gcm_siv::aead::AeadMutInPlace;
-    use aes_gcm_siv::aead::KeyInit;
-
-    let key = key.into();
-    let payload = payload.as_ref();
-
-    let nonce = <aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::aead::AeadCore>::generate_nonce(
-        aes_gcm_siv::aead::rand_core::OsRng,
-    );
-    let mut cipher = aes_gcm_siv::Aes256GcmSiv::new(key);
-
-    let mut buffer = Vec::with_capacity(payload.len() + sizes::NONCE_LEN + sizes::TAG_LEN);
-    buffer.extend_from_slice(payload);
-    let tag = cipher
-        .encrypt_in_place_detached(&nonce, &nonce, &mut buffer)
-        .ok()?;
-    buffer.extend_from_slice(&nonce);
-    buffer.extend_from_slice(&tag);
-    Some(buffer)
+    encrypt_inner(key, payload, 0)
 }
 
 /// Decrypts the payload with AES256 GCM SIV.
@@ -217,6 +199,45 @@ where
 /// let encrypted = crypter::decrypt(&key, payload);
 /// ```
 pub fn decrypt<'k, Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
+where
+    Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
+    Payload: AsRef<[u8]>,
+{
+    decrypt_inner(key, payload)
+}
+
+fn encrypt_inner<'k, Key, Payload>(
+    key: Key,
+    payload: Payload,
+    extra_capacity: usize,
+) -> Option<Vec<u8>>
+where
+    Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
+    Payload: AsRef<[u8]>,
+{
+    use aes_gcm_siv::aead::AeadMutInPlace;
+    use aes_gcm_siv::aead::KeyInit;
+
+    let key = key.into();
+    let payload = payload.as_ref();
+
+    let nonce = <aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::aead::AeadCore>::generate_nonce(
+        aes_gcm_siv::aead::rand_core::OsRng,
+    );
+    let mut cipher = aes_gcm_siv::Aes256GcmSiv::new(key);
+
+    let mut buffer =
+        Vec::with_capacity(payload.len() + sizes::NONCE_LEN + sizes::TAG_LEN + extra_capacity);
+    buffer.extend_from_slice(payload);
+    let tag = cipher
+        .encrypt_in_place_detached(&nonce, &[], &mut buffer)
+        .ok()?;
+    buffer.extend_from_slice(&nonce);
+    buffer.extend_from_slice(&tag);
+    Some(buffer)
+}
+
+fn decrypt_inner<'k, Key, Payload>(key: Key, payload: Payload) -> Option<Vec<u8>>
 where
     Key: Into<&'k aes_gcm_siv::Key<aes_gcm_siv::Aes256GcmSiv>>,
     Payload: AsRef<[u8]>,
@@ -238,7 +259,7 @@ where
     let cipher = aes_gcm_siv::Aes256GcmSiv::new(key);
     let mut buffer = Vec::from(payload);
     if cipher
-        .decrypt_in_place_detached(nonce, nonce, &mut buffer, tag)
+        .decrypt_in_place_detached(nonce, &[], &mut buffer, tag)
         .is_ok()
     {
         Some(buffer)
