@@ -165,6 +165,8 @@ mod sizes {
     pub(crate) const SALT_LEN: usize = argon2::RECOMMENDED_SALT_LEN;
 }
 
+pub type Key = [u8; <<aes_gcm_siv::Aes256GcmSiv as aes_gcm_siv::aead::KeySizeUser>::KeySize as aes_gcm_siv::aead::generic_array::typenum::Unsigned>::USIZE];
+
 /// Encrypts the payload with AES256 GCM SIV. The iv is randomly generated for each call.
 ///
 /// Returns [`None`] if an error occurred.
