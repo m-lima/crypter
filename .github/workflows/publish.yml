@@ -20,7 +20,19 @@ jobs:
           version=`cargo metadata | jq -r '.packages[] | select(.name == "${{ env.CRATE_NAME }}") | .version'`
           version=v"${version}"
           [ "${version}" ] && [ "${version}" == "${{ github.ref_name }}" ]
-  check:
+  nix:
+    name: Nix Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Nixify
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check
+        run: nix flake check
+  cargoAll:
     name: Check
     runs-on: ubuntu-latest
     steps:
@@ -58,7 +70,7 @@ jobs:
         run: cargo hack test --verbose --workspace --no-fail-fast
   publish:
     name: Publish
-    needs: [version, check]
+    needs: [version, nix, cargoAll]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

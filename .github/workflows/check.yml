@@ -5,9 +5,14 @@ on:
       - "**"
     tags-ignore:
       - v*
+env:
+  CRATE_NAME: crypter
+  CHECK_README: true
+  CHECK_BINDGEN: ffi/include/crypter.h
+  RUSTFLAGS: "-Dwarnings"
 jobs:
-  check:
-    name: Check
+  nix:
+    name: Nix Check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -18,3 +23,39 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Check
         run: nix flake check
+  cargoAll:
+    name: CargoAll Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+      - name: Check readme
+        if: env.CHECK_README
+        run: |
+          cargo install cargo-readme
+          diff README.md <(cargo readme)
+      - name: Check bindgen
+        if: ${{ env.CHECK_BINDGEN }} != ''
+        run: |
+          cargo install cbindgen
+          diff ${{ env.CHECK_BINDGEN }} <(cbindgen .)
+      - name: Check main
+        run: cargo hack --feature-powerset check --verbose --workspace
+      - name: Check tests
+        run: cargo hack --feature-powerset check --verbose --workspace --tests
+      - name: Check examples
+        run: cargo hack --feature-powerset check --verbose --workspace --examples
+      - name: Lint main
+        run: cargo hack --feature-powerset clippy --verbose --workspace -- -W clippy::pedantic
+      - name: Lint tests
+        run: cargo hack --feature-powerset clippy --verbose --workspace --tests -- -W clippy::pedantic
+      - name: Lint examples
+        run: cargo hack --feature-powerset clippy --verbose --workspace --examples -- -W clippy::pedantic
+      - name: Test
+        run: cargo hack test --verbose --workspace --no-fail-fast
